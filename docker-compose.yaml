@@ -1,0 +1,32 @@
+services:
+  apache_tika:
+    container_name: apache_tika
+    build:
+      context: .
+      dockerfile: Dockerfile-tika
+    networks:
+      - decide
+    restart: unless-stopped
+
+  pdf-content-service:
+    container_name: pdf-content-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    networks:
+      - decide
+    environment:
+      MODE: "development"
+      LOG_LEVEL: "info"
+      MU_SPARQL_ENDPOINT: http://virtuoso:8890/sparql
+      APACHE_TIKA_URL: "http://apache_tika:9998/tika"
+      EXPECTED_TASK_PREDICATE: "http://www.w3.org/ns/adms#status"
+      EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
+    volumes:
+      - ./:/app
+
+networks:
+  decide:
+    external: true
