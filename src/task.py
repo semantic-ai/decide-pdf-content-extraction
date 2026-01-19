@@ -22,7 +22,7 @@ class Task(ABC):
     def __init__(self, task_uri: str):
         super().__init__()
         self.task_uri = task_uri
-        self.results_container_uri = ""
+        self.results_container_uris = []
         self.logger = logging.getLogger(self.__class__.__name__)
 
     @classmethod
@@ -64,7 +64,7 @@ class Task(ABC):
                 "Unknown task type {0}".format(b['taskType']['value']))
         raise RuntimeError("Task with uri {0} not found".format(task_uri))
 
-    def change_state(self, old_state: str, new_state: str, results_container_uri: str = "") -> None:
+    def change_state(self, old_state: str, new_state: str, results_container_uris: list = []) -> None:
         """Update the task status in the triplestore."""
         query_template = Template(
             get_prefixes_for_query("task", "adms") +
@@ -91,7 +91,10 @@ class Task(ABC):
             }
             """)
 
-        results_container_line = f"task:resultsContainer {sparql_escape_uri(results_container_uri)} ;" if results_container_uri else ""
+        results_container_line = ""
+        if results_container_uris:
+            results_container_line = "\n".join(
+                [f"task:resultsContainer {sparql_escape_uri(uri)} ;" for uri in results_container_uris])
 
         query_string = query_template.substitute(
             new_status=JOB_STATUSES[new_state],
@@ -106,7 +109,7 @@ class Task(ABC):
         """Context manager for task execution with state transitions."""
         self.change_state("scheduled", "busy")
         yield
-        self.change_state("busy", "success", self.results_container_uri)
+        self.change_state("busy", "success", self.results_container_uris)
 
     def execute(self):
         """Run the task and handle state transitions."""
@@ -346,22 +349,18 @@ class PdfContentExtractionTask(Task, ABC):
 
         return work_uri
 
-    def create_output_container(self, resources: list[str]) -> str:
+    def create_output_container(self, resource: str) -> str:
         """
-        Function to create an output data container
-        containing the ELI manifestation, expression and work URIs as resources
+        Function to create an output data container for an ELI manifestation, expression or work.
 
         Args:
-            resources: List containing the ELI manifestation, expression and work URIs
+            resource: String containing an ELI manifestation, expression or work URI
 
         Returns:
             String containing the URI of the output data container
         """
         container_id = str(uuid.uuid4())
         container_uri = f"http://data.lblod.info/id/data-containers/{container_id}"
-
-        has_resource_lines = " ;\n".join(
-            f"task:hasResource {sparql_escape_uri(r)}" for r in resources)
 
         q = Template(
             get_prefixes_for_query("task", "nfo", "mu") +
@@ -370,14 +369,14 @@ class PdfContentExtractionTask(Task, ABC):
             GRAPH <{GRAPHS["data_containers"]}> {{
                 $container a nfo:DataContainer ;
                     mu:uuid "$uuid" ;
-                    $has_resource_lines .
+                    task:hasResource $resource .
             }}
             }}
             """
         ).substitute(
             container=sparql_escape_uri(container_uri),
             uuid=container_id,
-            has_resource_lines=has_resource_lines
+            resource=sparql_escape_uri(resource)
         )
 
         query(q)
@@ -395,8 +394,6 @@ class PdfContentExtractionTask(Task, ABC):
 
         extraction_results = self.extract_content_from_pdf(input)
 
-        output_container_resources = []
-
         for extraction_result in extraction_results:
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
@@ -404,8 +401,9 @@ class PdfContentExtractionTask(Task, ABC):
                 extraction_result["content"], manifestation_uri)
             work_uri = self.create_eli_work(expression_uri)
 
-            output_container_resources.extend(
-                [manifestation_uri, expression_uri, work_uri])
-
-        self.results_container_uri = self.create_output_container(
-            output_container_resources)
+            self.results_container_uris.append(
+                self.create_output_container(manifestation_uri))
+            self.results_container_uris.append(
+                self.create_output_container(expression_uri))
+            self.results_container_uris.append(
+                self.create_output_container(work_uri))
