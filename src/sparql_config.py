@@ -49,8 +49,9 @@ SPARQL_PREFIXES = {
 GRAPHS = {
     "jobs": "http://mu.semte.ch/graphs/jobs",
     "data_containers": "http://mu.semte.ch/graphs/data-containers",
-    "expressions": "http://mu.semte.ch/graphs/eli-expressions",
-    "work": "http://mu.semte.ch/graphs/eli-work"
+    "expressions": "http://mu.semte.ch/graphs/expressions",
+    "works": "http://mu.semte.ch/graphs/works",
+    "manifestations": "http://mu.semte.ch/graphs/manifestations"
 }
 
 # ==============================================================================

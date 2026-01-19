@@ -2,7 +2,7 @@ import contextlib
 from datetime import datetime, timezone
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Type
+from typing import Optional, Type, TypedDict
 import uuid
 
 from helpers import query
@@ -121,16 +121,22 @@ class Task(ABC):
 
 class PdfContentExtractionTask(Task, ABC):
     """
-    Task that processes PDFs and extracts their content to generate an ELI expression,
-    stored in the task's output data container.
+    Task that processes PDFs and extracts their content to generate an ELI manifestation,
+    expression and work, stored in the task's output data container.
     """
 
     __task_type__ = TASK_OPERATIONS["pdf_content_extraction"]
 
+    class PdfExtractionResult(TypedDict):
+        content: str
+        pdf_url: str
+        byte_size: int
+        filename: str
+
     def __init__(self, task_uri: str):
         super().__init__(task_uri)
 
-    def fetch_data_from_input_container(self) -> dict[str: list[str]]:
+    def fetch_data_from_input_container(self) -> dict[str, list[str]]:
         """
         Function to retrieve the data from the task's input data container
 
@@ -163,99 +169,190 @@ class PdfContentExtractionTask(Task, ABC):
 
         return {
             "filenames": [b["fileName"]["value"] for b in bindings],
-            "downloadUrls": [b["fileUrl"]["value"] for b in bindings],
+            "download_urls": [b["fileUrl"]["value"] for b in bindings],
         }
 
-    def extract_content_from_pdf(self, input: dict[str: list[str]]) -> list[str]:
+    def extract_content_from_pdf(self, input: dict[str, list[str]]) -> list[PdfExtractionResult]:
         """
-        Function to download the PDFs and extract their content using Apache Tika
+        Download the PDFs and extract their content using Apache Tika.
 
         Args:
             input: Dictionary containing the lists of PDF filenames and download URLs
                 (result of fetch_data_from_input_container)
+                Expected keys:
+                    - "filenames": list[str]
+                    - "download_urls": list[str]
 
         Returns:
-            List containing the PDF contents as strings
+            List of PdfExtractionResults containing:
+                - content: extracted text
+                - pdf_url: original download URL
+                - byte_size: size of the downloaded PDF in bytes
+                - filename: local filename used to save the PDF
         """
-        contents = []
+        results = []
 
-        for i in range(len(input["filenames"])):
-            filename = input["filenames"][i]
-            downloadUrl = input["downloadUrls"][i]
-
-            saved_path = "./pdfs/" + os.path.basename(filename)
+        for filename, download_url in zip(input["filenames"], input["download_urls"]):
+            saved_path = os.path.join("./pdfs", os.path.basename(filename))
 
             try:
-                urllib.request.urlretrieve(
-                    downloadUrl, filename=saved_path)
+                urllib.request.urlretrieve(download_url, filename=saved_path)
             except Exception as e:
-                raise e
+                self.logger.exception(f"Exception during PDF download: {e}")
 
             if os.path.isfile(saved_path):
                 try:
+                    byte_size = os.path.getsize(saved_path)
+
                     with open(saved_path, "rb") as f:
                         response = requests.put(
                             os.getenv("APACHE_TIKA_URL"),
                             data=f,
-                            # Ask for plain text output
-                            headers={"Accept": "text/plain"}
+                            headers={"Accept": "text/plain"},
                         )
-                        contents.append(response.content.decode("utf-8"))
+                        response.raise_for_status()
+                        content = response.content.decode("utf-8")
 
+                    results.append(
+                        {
+                            "content": content,
+                            "pdf_url": download_url,
+                            "byte_size": byte_size,
+                            "filename": saved_path,
+                        }
+                    )
                 except Exception as e:
-                    raise e
+                    self.logger.exception(
+                        f"Exception during retrieving content of PDF: {e}")
 
-        return contents
+        return results
 
-    def create_eli_expressions(self, contents: list[str]) -> list[str]:
+    def create_eli_expression(self, content: str, manifestation_uri: str) -> str:
         """
-        Function to create ELI expressions from the PDF contents
+        Function to create a single ELI expression from PDF content.
 
         Args:
-            contents: List containing the PDF contents as strings
-                (result of extract_content_from_pdf)
+            content: Text extracted from the PDF
+            manifestation_uri: URI of the manifestation that embodies this expression
 
         Returns:
-            List containing the ELI expression URIs
+            The created ELI expression URI
         """
-        expression_uris = []
-
         now = datetime.now(timezone.utc).astimezone(
         ).isoformat(timespec="seconds")
 
-        for content in contents:
-            expression_uri = f"http://data.lblod.info/id/eli-expressions/{uuid.uuid4()}"
-            q = Template(
-                get_prefixes_for_query("eli", "epvoc", "dct", "xsd") +
-                f"""
-                INSERT DATA {{
-                GRAPH <{GRAPHS["expressions"]}> {{
-                    $expr a eli:Expression ;
-                        epvoc:expressionContent $content ;
-                        dct:created "$now"^^xsd:dateTime ;
-                        dct:modified "$now"^^xsd:dateTime .
-                }}
-                }}
-                """
-            ).substitute(
-                expr=sparql_escape_uri(expression_uri),
-                content=sparql_escape_string(content),
-                now=now,
-            )
+        expression_uri = f"http://data.lblod.info/id/expressions/{uuid.uuid4()}"
 
-            query(q)
-            expression_uris.append(expression_uri)
+        q = Template(
+            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd")
+            + f"""
+            INSERT DATA {{
+            GRAPH <{GRAPHS["expressions"]}> {{
+                $expr a eli:Expression ;
+                    epvoc:expressionContent $content ;
+                    eli:is_embodied_by $manif ;
+                    dcterms:created "$now"^^xsd:dateTime ;
+                    dcterms:modified "$now"^^xsd:dateTime .
+            }}
+            }}
+            """
+        ).substitute(
+            expr=sparql_escape_uri(expression_uri),
+            content=sparql_escape_string(content),
+            manif=sparql_escape_uri(manifestation_uri),
+            now=now,
+        )
 
-        return expression_uris
+        query(q)
+
+        return expression_uri
+
+    def create_manifestation(self, byte_size: int, pdf_url: str) -> str:
+        """
+        Function to create a single ELI manifestation.
+
+        Args:
+            byte_size: Size of the file in bytes.
+            pdf_url: URL to the PDF.
+
+        Returns:
+            The created manifestation URI.
+        """
+        now = datetime.now(timezone.utc).astimezone(
+        ).isoformat(timespec="seconds")
+
+        manifestation_uuid = str(uuid.uuid4())
+        manifestation_uri = f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
+
+        q = Template(
+            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd", "mu")
+            + f"""
+            INSERT DATA {{
+            GRAPH <{GRAPHS["manifestations"]}> {{
+                $manif a eli:Manifestation ;
+                    mu:uuid $uuid ;
+                    dcterms:created "$now"^^xsd:dateTime ;
+                    dcterms:modified "$now"^^xsd:dateTime ;
+                    eli:media_type "application/pdf" ;
+                    epvoc:byteSize $byte_size ;
+                    eli:is_exemplified_by $pdf_url .
+
+            }}
+            }}
+            """
+        ).substitute(
+            manif=sparql_escape_uri(manifestation_uri),
+            uuid=sparql_escape_string(manifestation_uuid),
+            byte_size=str(byte_size),
+            pdf_url=sparql_escape_uri(pdf_url),
+            now=now,
+        )
+
+        query(q)
+
+        return manifestation_uri
+
+    def create_eli_work(self, expression_uri: str) -> str:
+        """
+        Function to create a single ELI expression work.
+
+        Args:
+            expression_uri: URI of the expression that realizes this work.
+
+        Returns:
+            The created work URI.
+        """
+        work_uuid = str(uuid.uuid4())
+        work_uri = f"http://data.lblod.info/id/works/{work_uuid}"
+
+        q = Template(
+            get_prefixes_for_query("eli", "mu")
+            + f"""
+            INSERT DATA {{
+            GRAPH <{GRAPHS["works"]}> {{
+                $work a eli:Work ;
+                    mu:uuid $uuid ;
+                    eli:is_realized_by $expr .
+            }}
+            }}
+            """
+        ).substitute(
+            work=sparql_escape_uri(work_uri),
+            uuid=sparql_escape_string(work_uuid),
+            expr=sparql_escape_uri(expression_uri),
+        )
+
+        query(q)
+
+        return work_uri
 
     def create_output_container(self, resources: list[str]) -> str:
         """
         Function to create an output data container
-        containing the ELI expression URIs as resources
+        containing the ELI manifestation, expression and work URIs as resources
 
         Args:
-            resources: List containing the ELI expression URIs
-                (result of create_eli_expressions)
+            resources: List containing the ELI manifestation, expression and work URIs
 
         Returns:
             String containing the URI of the output data container
@@ -296,9 +393,19 @@ class PdfContentExtractionTask(Task, ABC):
         """
         input = self.fetch_data_from_input_container()
 
-        contents = self.extract_content_from_pdf(input)
+        extraction_results = self.extract_content_from_pdf(input)
 
-        expression_uris = self.create_eli_expressions(contents)
+        output_container_resources = []
+
+        for extraction_result in extraction_results:
+            manifestation_uri = self.create_manifestation(
+                extraction_result["byte_size"], extraction_result["pdf_url"])
+            expression_uri = self.create_eli_expression(
+                extraction_result["content"], manifestation_uri)
+            work_uri = self.create_eli_work(expression_uri)
+
+            output_container_resources.extend(
+                [manifestation_uri, expression_uri, work_uri])
 
         self.results_container_uri = self.create_output_container(
-            expression_uris)
+            output_container_resources)
