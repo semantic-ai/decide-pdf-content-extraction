@@ -38,7 +38,8 @@ SPARQL_PREFIXES = {
     "ns2": "https://w3id.org/okn/o/sd#",
     "ns3": "https://w3id.org/airo#",
     "schema": "https://schema.org/",
-    "epvoc": "https://data.europarl.europa.eu/def/epvoc#"
+    "epvoc": "https://data.europarl.europa.eu/def/epvoc#",
+    "nie": "http://www.semanticdesktop.org/ontologies/2007/01/19/nie#"
 }
 
 # ==============================================================================
@@ -51,7 +52,10 @@ GRAPHS = {
     "data_containers": "http://mu.semte.ch/graphs/data-containers",
     "expressions": "http://mu.semte.ch/graphs/expressions",
     "works": "http://mu.semte.ch/graphs/works",
-    "manifestations": "http://mu.semte.ch/graphs/manifestations"
+    "manifestations": "http://mu.semte.ch/graphs/manifestations",
+    "harvest_collections": "http://mu.semte.ch/graphs/harvest-collections",
+    "remote_objects": "http://mu.semte.ch/graphs/remote-objects",
+    "files": "http://mu.semte.ch/graphs/files",
 }
 
 # ==============================================================================

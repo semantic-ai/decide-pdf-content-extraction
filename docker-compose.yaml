@@ -26,6 +26,7 @@ services:
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
     volumes:
       - ./:/app
+      - ./../app-decide/data/files:/mnt/share
 
 networks:
   decide:

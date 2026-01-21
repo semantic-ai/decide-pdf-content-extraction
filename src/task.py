@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Type, TypedDict
+from urllib.parse import parse_qs, urlparse
 import uuid
 
 from helpers import query
@@ -139,27 +140,26 @@ class PdfContentExtractionTask(Task, ABC):
     def __init__(self, task_uri: str):
         super().__init__(task_uri)
 
+    from string import Template
+
     def fetch_data_from_input_container(self) -> dict[str, list[str]]:
         """
-        Function to retrieve the data from the task's input data container
+        Retrieve filenames and download URLs from the task's input container,
+        supporting both remote and local PDFs.
 
         Returns:
             Dictionary containing the lists of PDF filenames and download URLs
+                Keys:
+                    - "filenames": list[str]
+                    - "download_urls": list[str]
         """
         q = Template(
-            get_prefixes_for_query("task", "nfo") +
+            get_prefixes_for_query("task") +
             f"""
-            SELECT ?fileUrl, ?fileName WHERE {{
+            SELECT ?container WHERE {{
             GRAPH <{GRAPHS["jobs"]}> {{
                 BIND($task AS ?task)
                 ?task task:inputContainer ?container .
-            }}
-            GRAPH <{GRAPHS["data_containers"]}> {{
-                ?container a nfo:DataContainer ;
-                    task:hasFile ?file .
-                ?file a nfo:FileDataObject ;
-                    nfo:fileName ?fileName ;
-                    nfo:fileUrl ?fileUrl .
             }}
             }}
             """
@@ -168,11 +168,116 @@ class PdfContentExtractionTask(Task, ABC):
         bindings = query(q).get("results", {}).get("bindings", [])
         if not bindings:
             raise RuntimeError(
-                f"No input files found for task {self.task_uri}")
+                f"No input container found for task {self.task_uri}")
+
+        container_uri = bindings[0]["container"]["value"]
+
+        if self._container_has_harvest_collection(container_uri):
+            return self._fetch_remote_files(container_uri)
+        else:
+            return self._fetch_local_files(container_uri)
+
+    def _container_has_harvest_collection(self, container_uri: str) -> bool:
+        """
+        Private helper function to determine if the input container has 
+        a harvest collection (and thus if it consists of remote or local PDFs).
+
+        Returns:
+            Boolean indicating whether the input container
+            has a harvest collection or not.
+        """
+        q = f"""
+            {get_prefixes_for_query("task")}
+
+            ASK {{
+            GRAPH <{GRAPHS["data_containers"]}> {{
+                <{container_uri}> task:hasHarvestingCollection ?c .
+            }}
+            }}
+            """
+
+        return query(q).get("boolean", False)
+
+    def _fetch_remote_files(self, container_uri: str) -> dict[str, list[str]]:
+        """
+        Private helper function to retrieve
+        the download urls and filenames of remote PDFs.
+
+        Returns:
+            Dictionary containing the lists of PDF filenames and download URLs
+                Keys:
+                    - "filenames": list[str]
+                    - "download_urls": list[str]
+        """
+        q = f"""
+            {get_prefixes_for_query("task", "dct", "nfo", "nie")}
+            SELECT ?fileUrl WHERE {{
+            GRAPH <{GRAPHS["data_containers"]}> {{
+                <{container_uri}> task:hasHarvestingCollection ?collection .
+            }}
+            GRAPH <{GRAPHS["harvest_collections"]}> {{
+                ?collection dct:hasPart ?remote .
+            }}
+            GRAPH <{GRAPHS["remote_objects"]}> {{
+                ?remote a nfo:RemoteDataObject ;
+                        nie:url ?fileUrl .
+            }}
+            }}
+            """
+
+        bindings = query(q).get("results", {}).get("bindings", [])
+        if not bindings:
+            raise RuntimeError(
+                "No remote files found in harvesting collection")
+
+        download_urls = [b["fileUrl"]["value"] for b in bindings]
+        filenames = [
+            parse_qs(urlparse(url).query).get(
+                "filename", [url.rsplit("/", 1)[-1]])[0]
+            for url in download_urls
+        ]
+
+        return {
+            "filenames": filenames,
+            "download_urls": download_urls,
+        }
+
+    def _fetch_local_files(self, container_uri: str) -> dict[str, list[str]]:
+        """
+        Private helper function to retrieve
+        the download urls and filenames of local PDFs.
+
+        Returns:
+            Dictionary containing the lists of PDF filenames and download URLs
+                Keys:
+                    - "filenames": list[str]
+                    - "download_urls": list[str]
+        """
+        q = f"""
+            {get_prefixes_for_query("task", "nfo", "nie")}
+            SELECT ?fileName ?shareIri WHERE {{
+            GRAPH <{GRAPHS["data_containers"]}> {{
+                <{container_uri}> task:hasFile ?file .
+            }}
+
+            GRAPH <{GRAPHS["files"]}> {{
+                ?file a nfo:FileDataObject ;
+                    nfo:fileName ?fileName .
+
+                ?shareIri a nfo:FileDataObject ;
+                        nie:dataSource ?file .
+            }}
+            }}
+            """
+
+        bindings = query(q).get("results", {}).get("bindings", [])
+        if not bindings:
+            raise RuntimeError(
+                "No local share:// files found in data container")
 
         return {
             "filenames": [b["fileName"]["value"] for b in bindings],
-            "download_urls": [b["fileUrl"]["value"] for b in bindings],
+            "download_urls": [b["shareIri"]["value"] for b in bindings],
         }
 
     def extract_content_from_pdf(self, input: dict[str, list[str]]) -> list[PdfExtractionResult]:
@@ -196,12 +301,25 @@ class PdfContentExtractionTask(Task, ABC):
         results = []
 
         for filename, download_url in zip(input["filenames"], input["download_urls"]):
-            saved_path = os.path.join("./pdfs", os.path.basename(filename))
+            parsed = urlparse(download_url)
 
-            try:
-                urllib.request.urlretrieve(download_url, filename=saved_path)
-            except Exception as e:
-                self.logger.exception(f"Exception during PDF download: {e}")
+            share_root = os.getenv("MOUNTED_SHARE_FOLDER")
+            share_folder_name = os.path.dirname(share_root)
+
+            if parsed.scheme == share_folder_name:
+                saved_path = os.path.join(
+                    share_root, parsed.netloc + parsed.path)
+
+            else:
+                saved_path = os.path.join(
+                    share_root, "extract", os.path.basename(filename))
+
+                try:
+                    urllib.request.urlretrieve(
+                        download_url, filename=saved_path)
+                except Exception as e:
+                    self.logger.exception(
+                        f"Exception during PDF download: {e}")
 
             if os.path.isfile(saved_path):
                 try:
