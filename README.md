@@ -22,7 +22,9 @@ This service allows to extract the content from remote or local PDfs. For remote
    docker network create decide
    ```
 
-3. Mount the folder data/files in the lblod/app-decide repo as a volume and add the mounted path as the environment variable 'MOUNTED_SHARE_FOLDER'. This is the location where the local PDFs must be stored, whereas the remote PDFs will be saved in the folder 'extract' at that location.
+2. Mount the folder data/files in the lblod/app-decide repo as a volume and add the mounted path as the environment variable 'MOUNTED_SHARE_FOLDER'. This is the location where the local PDFs must be stored, whereas the remote PDFs will be saved in the folder 'extract' at that location.
+
+3. The file [sparql_config.py](src/sparql_config.py) allows to easily configure SPARQL prefixes and URIs. In case a single graph for input and a single graph for output is desired, set the environment variables TARGET_GRAPH (input) and/or PUBLICATION_GRAPH (output).
    
 ## Running
 Run the container using 
