@@ -24,6 +24,8 @@ services:
       APACHE_TIKA_URL: "http://apache_tika:9998/tika"
       EXPECTED_TASK_PREDICATE: "http://www.w3.org/ns/adms#status"
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
+      TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
+      PUBLICATION_GRAPH: http://mu.semte.ch/graphs/publication
     volumes:
       - ./:/app
       - ./../app-decide/data/files:/mnt/share

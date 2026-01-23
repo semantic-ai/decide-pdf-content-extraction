@@ -6,6 +6,8 @@ the codebase. By maintaining these in one place, updates to URIs or prefixes onl
 need to be made once, reducing maintenance burden and preventing inconsistencies.
 """
 
+import os
+
 # ==============================================================================
 # SPARQL NAMESPACE PREFIXES
 # ==============================================================================
@@ -47,15 +49,20 @@ SPARQL_PREFIXES = {
 # ==============================================================================
 # Named graphs in the RDF store
 
+TARGET_GRAPH = os.getenv("TARGET_GRAPH", None)
+PUBLICATION_GRAPH = os.getenv("PUBLICATION_GRAPH", None)
+
 GRAPHS = {
-    "jobs": "http://mu.semte.ch/graphs/jobs",
-    "data_containers": "http://mu.semte.ch/graphs/data-containers",
-    "expressions": "http://mu.semte.ch/graphs/expressions",
-    "works": "http://mu.semte.ch/graphs/works",
-    "manifestations": "http://mu.semte.ch/graphs/manifestations",
-    "harvest_collections": "http://mu.semte.ch/graphs/harvest-collections",
-    "remote_objects": "http://mu.semte.ch/graphs/remote-objects",
-    "files": "http://mu.semte.ch/graphs/files",
+    # INPUT GRAPHS
+    "jobs": TARGET_GRAPH if TARGET_GRAPH else "http://mu.semte.ch/graphs/jobs",
+    "data_containers": TARGET_GRAPH if TARGET_GRAPH else "http://mu.semte.ch/graphs/data-containers",
+    "harvest_collections": TARGET_GRAPH if TARGET_GRAPH else "http://mu.semte.ch/graphs/harvest-collections",
+    "remote_objects": TARGET_GRAPH if TARGET_GRAPH else "http://mu.semte.ch/graphs/remote-objects",
+    "files": TARGET_GRAPH if TARGET_GRAPH else "http://mu.semte.ch/graphs/files",
+    # OUTPUT GRAPHS
+    "expressions": PUBLICATION_GRAPH if PUBLICATION_GRAPH else "http://mu.semte.ch/graphs/expressions",
+    "works": PUBLICATION_GRAPH if PUBLICATION_GRAPH else "http://mu.semte.ch/graphs/works",
+    "manifestations": PUBLICATION_GRAPH if PUBLICATION_GRAPH else "http://mu.semte.ch/graphs/manifestations",
 }
 
 # ==============================================================================
