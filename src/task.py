@@ -303,7 +303,7 @@ class PdfContentExtractionTask(Task, ABC):
         for filename, download_url in zip(input["filenames"], input["download_urls"]):
             parsed = urlparse(download_url)
 
-            share_root = os.getenv("MOUNTED_SHARE_FOLDER")
+            share_root = os.environ["MOUNTED_SHARE_FOLDER"]
             share_folder_name = os.path.dirname(share_root)
 
             if parsed.scheme == share_folder_name:
@@ -311,8 +311,11 @@ class PdfContentExtractionTask(Task, ABC):
                     share_root, parsed.netloc + parsed.path)
 
             else:
+                extract_folder = os.path.join(share_root, "extract")
+                os.makedirs(extract_folder, exist_ok=True)
+
                 saved_path = os.path.join(
-                    share_root, "extract", os.path.basename(filename))
+                    extract_folder, os.path.basename(filename))
 
                 try:
                     urllib.request.urlretrieve(
@@ -327,7 +330,7 @@ class PdfContentExtractionTask(Task, ABC):
 
                     with open(saved_path, "rb") as f:
                         response = requests.put(
-                            os.getenv("APACHE_TIKA_URL"),
+                            os.environ["APACHE_TIKA_URL"],
                             data=f,
                             headers={"Accept": "text/plain"},
                         )
