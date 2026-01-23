@@ -174,7 +174,7 @@ curl -X POST http://localhost:8080/delta \
 The corresponding ELI manifestations, expressions and works will be stored in the triple store hosted by lblod/app-decide container.
 
 ### SPARQL queries to verify the process:
-Check the tasks after inserting them:
+Check the tasks after inserting them (including data output containers):
 ```
 PREFIX adms: <http://www.w3.org/ns/adms#>
 PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
@@ -305,22 +305,4 @@ WHERE {
   }
 }
 ORDER BY ?resource
-```
-
-Check the tasks again with the data output containers:
-```
-PREFIX adms: <http://www.w3.org/ns/adms#>
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
-
-SELECT ?task ?status ?operation ?resultsContainer
-WHERE {
-  GRAPH <http://mu.semte.ch/graphs/jobs> {
-    ?task a task:Task ;
-          adms:status ?status ;
-          task:operation ?operation .
-
-    OPTIONAL { ?task task:resultsContainer ?resultsContainer . }
-  }
-}
-ORDER BY ?task
 ```
