@@ -6,7 +6,7 @@ This service allows to extract the content from remote or local PDfs. For remote
 
 ```
 pdf-content:
-    image: lblod/pdf-content-service:0.0.1
+    image: semantic-ai/pdf-content-service:0.0.1
     environment:
       APACHE_TIKA_URL: "http://apache-tika:9998/tika"
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
