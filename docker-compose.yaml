@@ -26,6 +26,7 @@ services:
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
       PUBLICATION_GRAPH: http://mu.semte.ch/graphs/publication
+      MOUNTED_SHARE_FOLDER: "/mnt/share"
     volumes:
       - ./:/app
       - ./../app-decide/data/files:/mnt/share

@@ -2,25 +2,19 @@
 This service allows to extract the content from remote or local PDfs. For remote PDFs, there is an extra step in which they are first downloaded before they are processed. Furthermore, the service can process multiple PDFs in one go.
 
 ## Set-up
-1. Clone the repository [lblod/app-decide](https://github.com/lblod/app-decide), expose the containers so that they can communicate with each other, and then run both containers. 
+1. Add the service to your Semantic.Works application in the `docker-compose.yml`:
 
-   Exposing the containers was done by adding a file 'docker-compose.override.yaml' to the lblod/app-decide repo containing:
-   ```
-   services:
-     virtuoso:
-       networks:
-         - decide
-       ports:
-         - "8890:8890"
-   
-   networks:
-     decide:
-       external: true
-   ```
-   Create the 'decide' Docker network using the following command:
-   ```
-   docker network create decide
-   ```
+```
+pdf-content:
+    image: lblod/pdf-content-service:0.0.1
+    environment:
+      APACHE_TIKA_URL: "http://apache-tika:9998/tika"
+      TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
+      PUBLICATION_GRAPH: http://mu.semte.ch/graphs/public/pdf
+      MOUNTED_SHARE_FOLDER: "/mnt/share"
+    volumes:
+      - ./data/files:/mnt/share
+```
 
 2. Mount the folder data/files in the lblod/app-decide repo as a volume and add the mounted path as the environment variable 'MOUNTED_SHARE_FOLDER'. This is the location where the local PDFs must be stored, whereas the remote PDFs will be saved in the folder 'extract' at that location.
 
@@ -36,7 +30,7 @@ docker compose up -d # run without -d flag when you don't want to run it in the 
 Open your local SPARQL query editor (by default configured to run on http://localhost:8890/sparql as set by lblod/app-decide), and run the following query to create a Task to extract the content from a remote PDF:
 ```
 PREFIX adms: <http://www.w3.org/ns/adms#>
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
+PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 PREFIX dct:  <http://purl.org/dc/terms/>
 PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 PREFIX nfo:  <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#>
@@ -45,7 +39,7 @@ PREFIX mu:   <http://mu.semte.ch/vocabularies/core/>
 
 INSERT DATA {
 
-  GRAPH <http://mu.semte.ch/graphs/jobs> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://data.lblod.info/id/tasks/demo-pdf-remote>
       a task:Task ;
       mu:uuid "demo-pdf-remote" ;
@@ -55,7 +49,7 @@ INSERT DATA {
       dct:created "2025-10-31T09:00:00Z"^^xsd:dateTime .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/data-containers> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://data.lblod.info/id/data-container/demo-remote>
       a nfo:DataContainer ;
       mu:uuid "demo-remote" ;
@@ -63,7 +57,7 @@ INSERT DATA {
         <http://lblod.data.gift/id/harvest-collections/demo-collection> .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/harvest-collections> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://lblod.data.gift/id/harvest-collections/demo-collection>
       a <http://lblod.data.gift/vocabularies/harvesting/HarvestingCollection> ;
       mu:uuid "demo-collection" ;
@@ -71,7 +65,7 @@ INSERT DATA {
                   <http://lblod.data.gift/id/remote-data-objects/demo-pdf-2> .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/remote-objects> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://lblod.data.gift/id/remote-data-objects/demo-pdf-1>
       a nfo:RemoteDataObject ;
       mu:uuid "demo-pdf-1" ;
@@ -97,7 +91,7 @@ curl -X POST http://localhost:8080/delta \
           "subject": { "type": "uri", "value": "http://data.lblod.info/id/tasks/demo-pdf-remote" },
           "predicate": { "type": "uri", "value": "http://www.w3.org/ns/adms#status" },
           "object": { "type": "uri", "value": "http://redpencil.data.gift/id/concept/JobStatus/scheduled" },
-          "graph": { "type": "uri", "value": "http://mu.semte.ch/graphs/jobs" }
+          "graph": { "type": "uri", "value": "http://mu.semte.ch/graphs/harvesting" }
         }
       ],
       "deletes": []
@@ -111,7 +105,7 @@ Open your local SPARQL query editor (by default configured to run on http://loca
 
 ```
 PREFIX adms: <http://www.w3.org/ns/adms#>
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
+PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 PREFIX dct:  <http://purl.org/dc/terms/>
 PREFIX xsd:  <http://www.w3.org/2001/XMLSchema#>
 PREFIX nfo:  <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#>
@@ -120,7 +114,7 @@ PREFIX mu:   <http://mu.semte.ch/vocabularies/core/>
 
 INSERT DATA {
 
-  GRAPH <http://mu.semte.ch/graphs/jobs> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://data.lblod.info/id/tasks/demo-pdf-local>
       a task:Task ;
       mu:uuid "demo-pdf-local" ;
@@ -130,14 +124,14 @@ INSERT DATA {
       dct:created "2025-10-31T09:00:00Z"^^xsd:dateTime .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/data-containers> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://data.lblod.info/id/data-container/demo-local>
       a nfo:DataContainer ;
       mu:uuid "demo-local" ;
       task:hasFile <http://data.lblod.info/id/files/demo-pdf-3> .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/files> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <http://data.lblod.info/id/files/demo-pdf-3>
       a nfo:FileDataObject ;
       mu:uuid "demo-pdf-3" ;
@@ -145,7 +139,7 @@ INSERT DATA {
       dct:format "application/pdf" .
   }
 
-  GRAPH <http://mu.semte.ch/graphs/files> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     <share://extract/Vast_Bureau_Besluitenlijst_05-01-2022.pdf>
       a nfo:FileDataObject ;
       nie:dataSource <http://data.lblod.info/id/files/demo-pdf-3> ;
@@ -166,7 +160,7 @@ curl -X POST http://localhost:8080/delta \
           "subject": { "type": "uri", "value": "http://data.lblod.info/id/tasks/demo-pdf-local" },
           "predicate": { "type": "uri", "value": "http://www.w3.org/ns/adms#status" },
           "object": { "type": "uri", "value": "http://redpencil.data.gift/id/concept/JobStatus/scheduled" },
-          "graph": { "type": "uri", "value": "http://mu.semte.ch/graphs/jobs" }
+          "graph": { "type": "uri", "value": "http://mu.semte.ch/graphs/harvesting" }
         }
       ],
       "deletes": []
@@ -179,11 +173,11 @@ The corresponding ELI manifestations, expressions and works will be stored in th
 Check the tasks after inserting them (including data output containers):
 ```
 PREFIX adms: <http://www.w3.org/ns/adms#>
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
+PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 
 SELECT ?task ?status ?operation ?resultsContainer
 WHERE {
-  GRAPH <http://mu.semte.ch/graphs/jobs> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     ?task a task:Task ;
           adms:status ?status ;
           task:operation ?operation .
@@ -196,7 +190,7 @@ ORDER BY ?task
 
 Check the files to be processed:
 ```
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
+PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 PREFIX dct:  <http://purl.org/dc/terms/>
 PREFIX nfo:  <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#>
 PREFIX nie:  <http://www.semanticdesktop.org/ontologies/2007/01/19/nie#>
@@ -204,12 +198,12 @@ PREFIX nie:  <http://www.semanticdesktop.org/ontologies/2007/01/19/nie#>
 SELECT ?container ?file ?fileUrl ?fileLocation
 WHERE {
   {
-    GRAPH <http://mu.semte.ch/graphs/data-containers> {
+    GRAPH <http://mu.semte.ch/graphs/harvesting> {
       ?container a nfo:DataContainer ;
                  task:hasFile ?file .
     }
 
-    GRAPH <http://mu.semte.ch/graphs/files> {
+    GRAPH <http://mu.semte.ch/graphs/harvesting> {
       ?file a nfo:FileDataObject .
       OPTIONAL {
         ?fileLocation a nfo:FileDataObject ;
@@ -220,16 +214,16 @@ WHERE {
   UNION
   {
     # --- Remote file case (your second query) ---
-    GRAPH <http://mu.semte.ch/graphs/data-containers> {
+    GRAPH <http://mu.semte.ch/graphs/harvesting> {
       ?container a nfo:DataContainer ;
                  task:hasHarvestingCollection ?collection .
     }
 
-    GRAPH <http://mu.semte.ch/graphs/harvest-collections> {
+    GRAPH <http://mu.semte.ch/graphs/harvesting> {
       ?collection dct:hasPart ?file .
     }
 
-    GRAPH <http://mu.semte.ch/graphs/remote-objects> {
+    GRAPH <http://mu.semte.ch/graphs/harvesting> {
       ?file a nfo:RemoteDataObject ;
             nie:url ?fileUrl .
     }
@@ -247,7 +241,7 @@ PREFIX mu:    <http://mu.semte.ch/vocabularies/core/>
 
 SELECT ?manifestation ?uuid ?mediaType ?byteSize ?pdfUrl ?created ?modified
 WHERE {
-  GRAPH <http://mu.semte.ch/graphs/manifestations> {
+  GRAPH <http://mu.semte.ch/graphs/public/pdf> {
     ?manifestation a eli:Manifestation ;
                    mu:uuid ?uuid ;
                    eli:media_type ?mediaType ;
@@ -268,7 +262,7 @@ PREFIX dct:   <http://purl.org/dc/terms/>
 
 SELECT ?expr ?content ?created ?modified
 WHERE {
-  GRAPH <http://mu.semte.ch/graphs/expressions> {
+  GRAPH <http://mu.semte.ch/graphs/public/pdf> {
     ?expr a eli:Expression ;
           epvoc:expressionContent ?content ;
           dct:created ?created ;
@@ -285,7 +279,7 @@ PREFIX mu:  <http://mu.semte.ch/vocabularies/core/>
 
 SELECT ?work ?uuid ?expression
 WHERE {
-  GRAPH <http://mu.semte.ch/graphs/works> {
+  GRAPH <http://mu.semte.ch/graphs/public/pdf> {
     ?work a eli:Work ;
           mu:uuid ?uuid ;
           eli:is_realized_by ?expression .
@@ -295,13 +289,13 @@ WHERE {
 
 Check the created data output containers:
 ```
-PREFIX task: <http://lblod.data.gift/vocabularies/tasks/>
+PREFIX task: <http://redpencil.data.gift/vocabularies/tasks/>
 PREFIX nfo:  <http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#>
 PREFIX mu:   <http://mu.semte.ch/vocabularies/core/>
 
 SELECT ?container ?resource
 WHERE {
-  GRAPH <http://mu.semte.ch/graphs/data-containers> {
+  GRAPH <http://mu.semte.ch/graphs/harvesting> {
     ?container a nfo:DataContainer ;
                task:hasResource ?resource .
   }
