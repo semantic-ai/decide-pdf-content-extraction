@@ -33,7 +33,7 @@ SPARQL_PREFIXES = {
     "xsd": "http://www.w3.org/2001/XMLSchema#",
     "skos": "http://www.w3.org/2004/02/skos/core#",
     "adms": "http://www.w3.org/ns/adms#",
-    "task": "http://lblod.data.gift/vocabularies/tasks/",
+    "task": "http://redpencil.data.gift/vocabularies/tasks/",
     "nfo": "http://www.semanticdesktop.org/ontologies/2007/03/22/nfo#",
     "eli": "http://data.europa.eu/eli/ontology#",
     "ns1": "http://www.w3.org/ns/dqv#",
@@ -41,7 +41,8 @@ SPARQL_PREFIXES = {
     "ns3": "https://w3id.org/airo#",
     "schema": "https://schema.org/",
     "epvoc": "https://data.europarl.europa.eu/def/epvoc#",
-    "nie": "http://www.semanticdesktop.org/ontologies/2007/01/19/nie#"
+    "nie": "http://www.semanticdesktop.org/ontologies/2007/01/19/nie#",
+    "harvesting": "http://lblod.data.gift/vocabularies/harvesting/"
 }
 
 # ==============================================================================
@@ -83,7 +84,7 @@ JOB_STATUSES = {
 # ==============================================================================
 
 TASK_OPERATIONS = {
-    "pdf_content_extraction": "http://lblod.data.gift/id/jobs/concept/TaskOperation/taskop:pdf-to-eli",
+    "pdf_content_extraction": "http://lblod.data.gift/id/jobs/concept/TaskOperation/pdf-to-eli",
 }
 
 # ==============================================================================

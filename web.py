@@ -14,29 +14,14 @@ class Value(BaseModel):
     type: str
     value: str
 
-
-class ExpectedTaskPredicateValue(BaseModel):
-    value: Literal[os.getenv("EXPECTED_TASK_PREDICATE")]
-
-
-class ExpectedTaskObjectValue(BaseModel):
-    value: Literal[os.getenv("EXPECTED_TASK_OBJECT")]
-
-
 class Triplet(BaseModel):
     subject: Value
     predicate: Value
     object: Value
     graph: Value
 
-
-class InsertTriplet(Triplet):
-    predicate: ExpectedTaskPredicateValue
-    object: ExpectedTaskObjectValue
-
-
 class DeltaNotification(BaseModel):
-    inserts: list[InsertTriplet]
+    inserts: list[Triplet]
     deletes: list[Triplet]
 
 
@@ -47,6 +32,7 @@ class NotificationResponse(BaseModel):
 
 @router.post("/delta", status_code=202)
 async def delta(data: list[DeltaNotification], background_tasks: BackgroundTasks) -> NotificationResponse:
+    print("Received delta notification with", data, "patches")
     for patch in data:
         for ins in patch.inserts:
             task = Task.from_uri(ins.subject.value)

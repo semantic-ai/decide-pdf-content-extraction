@@ -6,7 +6,11 @@ from typing import Optional, Type, TypedDict
 from urllib.parse import parse_qs, urlparse
 import uuid
 
-from helpers import query
+from helpers import query, update, sparqlQuery, sparqlUpdate
+
+sparqlQuery.customHttpHeaders["mu-auth-sudo"] = "true"
+sparqlUpdate.customHttpHeaders["mu-auth-sudo"] = "true"
+
 from string import Template
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 
@@ -53,8 +57,8 @@ class Task(ABC):
             get_prefixes_for_query("adms", "task") +
             """
             SELECT ?task ?taskType WHERE {
+              BIND($uri AS ?task)
               ?task task:operation ?taskType .
-              FILTER(?task = $uri)
             }
         """).substitute(uri=sparql_escape_uri(task_uri))
         for b in query(q).get('results').get('bindings'):
@@ -103,7 +107,7 @@ class Task(ABC):
             task=sparql_escape_uri(self.task_uri),
             results_container_line=results_container_line)
 
-        query(query_string)
+        update(query_string)
 
     @contextlib.contextmanager
     def run(self):
@@ -387,7 +391,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        query(q)
+        update(q)
 
         return expression_uri
 
@@ -432,7 +436,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        query(q)
+        update(q)
 
         return manifestation_uri
 
@@ -466,7 +470,7 @@ class PdfContentExtractionTask(Task, ABC):
             expr=sparql_escape_uri(expression_uri),
         )
 
-        query(q)
+        update(q)
 
         return work_uri
 
@@ -500,7 +504,7 @@ class PdfContentExtractionTask(Task, ABC):
             resource=sparql_escape_uri(resource)
         )
 
-        query(q)
+        update(q)
         return container_uri
 
     def process(self):
@@ -509,7 +513,7 @@ class PdfContentExtractionTask(Task, ABC):
          - retrieves the data from the task's input data container
          - extracts the contents from the PDFs
          - creates an ELI expression for each PDF
-         - creates the task's data output containter containing the expressions
+         - creates the task's data output container containing the expressions
         """
         input = self.fetch_data_from_input_container()
 
