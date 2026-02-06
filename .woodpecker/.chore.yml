@@ -3,7 +3,7 @@ steps:
     image: woodpeckerci/plugin-docker-buildx
     settings:
       repo: "${CI_REPO_OWNER%%io}/${CI_REPO_NAME}"
-      platforms: linux/amd64,linux/arm64
+      platforms: linux/amd64
       tags: "chore-${CI_COMMIT_BRANCH##chore/}"
       username:
         from_secret: docker_username
