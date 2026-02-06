@@ -1,10 +1,7 @@
-import os
-
 from src.task import Task
 
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-from typing import Literal
 
 
 router = APIRouter()
@@ -14,11 +11,13 @@ class Value(BaseModel):
     type: str
     value: str
 
+
 class Triplet(BaseModel):
     subject: Value
     predicate: Value
     object: Value
     graph: Value
+
 
 class DeltaNotification(BaseModel):
     inserts: list[Triplet]
