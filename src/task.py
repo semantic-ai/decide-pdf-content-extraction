@@ -1,24 +1,25 @@
-import contextlib
-from datetime import datetime, timezone
-import logging
-from abc import ABC, abstractmethod
-from typing import Optional, Type, TypedDict
-from urllib.parse import parse_qs, urlparse
+import os
 import uuid
+import logging
+import requests
+import contextlib
+import langdetect
+import urllib.request
 
+from string import Template
+from urllib.parse import urlparse
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from typing import Optional, Type, TypedDict
+
+from .title_extractor import TitleExtractor
+
+from .sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
+from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update, sparqlQuery, sparqlUpdate
 
 sparqlQuery.customHttpHeaders["mu-auth-sudo"] = "true"
 sparqlUpdate.customHttpHeaders["mu-auth-sudo"] = "true"
-
-from string import Template
-from escape_helpers import sparql_escape_uri, sparql_escape_string
-
-import os
-import urllib.request
-import requests
-
-from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 
 
 class Task(ABC):
@@ -144,8 +145,6 @@ class PdfContentExtractionTask(Task, ABC):
     def __init__(self, task_uri: str):
         super().__init__(task_uri)
 
-    from string import Template
-
     def fetch_data_from_input_container(self) -> dict[str, list[str]]:
         """
         Retrieve filenames and download URLs from the task's input container,
@@ -214,8 +213,8 @@ class PdfContentExtractionTask(Task, ABC):
                     - "download_urls": list[str]
         """
         q = f"""
-            {get_prefixes_for_query("task", "dct", "nfo", "nie")}
-            SELECT ?fileUrl WHERE {{
+            {get_prefixes_for_query("task", "dct", "nfo", "nie", "mu")}
+            SELECT ?fileUrl ?uuid WHERE {{
             GRAPH <{GRAPHS["data_containers"]}> {{
                 <{container_uri}> task:hasHarvestingCollection ?collection .
             }}
@@ -224,7 +223,8 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             GRAPH <{GRAPHS["remote_objects"]}> {{
                 ?remote a nfo:RemoteDataObject ;
-                        nie:url ?fileUrl .
+                    mu:uuid ?uuid ;
+                    nie:url ?fileUrl .
             }}
             }}
             """
@@ -235,11 +235,7 @@ class PdfContentExtractionTask(Task, ABC):
                 "No remote files found in harvesting collection")
 
         download_urls = [b["fileUrl"]["value"] for b in bindings]
-        filenames = [
-            parse_qs(urlparse(url).query).get(
-                "filename", [url.rsplit("/", 1)[-1]])[0]
-            for url in download_urls
-        ]
+        filenames = [b["uuid"]["value"] + ".pdf" for b in bindings]
 
         return {
             "filenames": filenames,
@@ -355,12 +351,13 @@ class PdfContentExtractionTask(Task, ABC):
 
         return results
 
-    def create_eli_expression(self, content: str, manifestation_uri: str) -> str:
+    def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str) -> str:
         """
         Function to create a single ELI expression from PDF content.
 
         Args:
-            content: Text extracted from the PDF
+            decision: Dictionary containing text and title of the decision
+            language: String containing the language code of the extracted content
             manifestation_uri: URI of the manifestation that embodies this expression
 
         Returns:
@@ -377,6 +374,8 @@ class PdfContentExtractionTask(Task, ABC):
             INSERT DATA {{
             GRAPH <{GRAPHS["expressions"]}> {{
                 $expr a eli:Expression ;
+                    eli:title $title ;
+                    eli:language $language ;
                     epvoc:expressionContent $content ;
                     eli:is_embodied_by $manif ;
                     dcterms:created "$now"^^xsd:dateTime ;
@@ -386,7 +385,9 @@ class PdfContentExtractionTask(Task, ABC):
             """
         ).substitute(
             expr=sparql_escape_uri(expression_uri),
-            content=sparql_escape_string(content),
+            title=f"{sparql_escape_string(decision['title'])}@{language}",
+            language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
+            content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
             now=now,
         )
@@ -507,6 +508,60 @@ class PdfContentExtractionTask(Task, ABC):
         update(q)
         return container_uri
 
+    def split_decisions(self, text: str, extractor: TitleExtractor) -> list[dict[str, str]]:
+        """
+        Split the extracted text into individual decisions.
+
+        Args:
+            text: The full text extracted from the PDF.
+            extractor: An instance of TitleExtractor to extract titles from the text.
+        Returns:
+            A list of dictionaries, each representing an individual decision with "text" and "title" keys.
+        """
+
+        decisions = []
+        title_entities = extractor.extract(text)
+        if not title_entities:
+            decisions = [{
+                "text": text,
+                "title": ""
+            }]
+        else:
+            intro_text = text[:title_entities[0]["start"]]
+            start_title_decision_index = title_entities[0]["start"]
+            end_title_decision_index = title_entities[0]["end"]
+            current_decision_end_index = end_title_decision_index
+            while current_decision_end_index < len(text):
+                title_entities = extractor.extract(
+                    text[(end_title_decision_index):])
+                if title_entities != []:
+                    if title_entities[0]["start"] != title_entities[0]["end"]:
+                        current_decision_end_index = end_title_decision_index + \
+                            title_entities[0]["start"]
+                        decisions.append({
+                            "text": intro_text + text[start_title_decision_index:current_decision_end_index],
+                            "title": text[start_title_decision_index:end_title_decision_index]
+                        })
+                        start_title_decision_index = current_decision_end_index
+                        end_title_decision_index = current_decision_end_index + \
+                            title_entities[0]["end"]
+                    else:
+                        current_decision_end_index = len(text)
+                        decisions.append({
+                            "text": intro_text + text[start_title_decision_index:],
+                            "title": text[start_title_decision_index:end_title_decision_index]
+                        })
+                        break
+                else:
+                    current_decision_end_index = len(text)
+                    decisions.append({
+                        "text": intro_text + text[start_title_decision_index:],
+                        "title": text[start_title_decision_index:end_title_decision_index]
+                    })
+                    break
+
+        return decisions
+
     def process(self):
         """
         Implementation of Task's process function that
@@ -520,15 +575,22 @@ class PdfContentExtractionTask(Task, ABC):
         extraction_results = self.extract_content_from_pdf(input)
 
         for extraction_result in extraction_results:
+            language = langdetect.detect(extraction_result["content"])
+            extractor = TitleExtractor(language)
+            decisions = self.split_decisions(
+                extraction_result["content"], extractor)
+
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
-            expression_uri = self.create_eli_expression(
-                extraction_result["content"], manifestation_uri)
-            work_uri = self.create_eli_work(expression_uri)
+            for decision in decisions:
+                expression_uri = self.create_eli_expression(
+                    decision, language, manifestation_uri)
+                work_uri = self.create_eli_work(expression_uri)
+
+                self.results_container_uris.append(
+                    self.create_output_container(expression_uri))
+                self.results_container_uris.append(
+                    self.create_output_container(work_uri))
 
             self.results_container_uris.append(
                 self.create_output_container(manifestation_uri))
-            self.results_container_uris.append(
-                self.create_output_container(expression_uri))
-            self.results_container_uris.append(
-                self.create_output_container(work_uri))
