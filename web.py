@@ -59,4 +59,5 @@ def get_one_open_task() -> str | None:
         limit 1
     """
     results = query(q)
-    return results[0] if results else None
+    bindings = results.get("results", {}).get("bindings", [])
+    return bindings if bindings else None
