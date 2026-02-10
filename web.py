@@ -16,9 +16,6 @@ class NotificationResponse(BaseModel):
     status: str
     message: str
 
-# on startup fail existing busy tasks
-fail_busy_and_scheduled_tasks()
-
 currently_processing = None
 def process_all_open_tasks():
     global currently_processing
@@ -73,3 +70,9 @@ def find_open_tasks():
         binding["task"]["value"]
         for binding in results.get("results", {}).get("bindings", [])
     ]
+
+# on startup fail existing busy tasks
+fail_busy_and_scheduled_tasks()
+
+# on startup also immediately start scheduled tasks
+process_all_open_tasks()
