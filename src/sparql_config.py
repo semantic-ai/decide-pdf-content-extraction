@@ -7,6 +7,9 @@ need to be made once, reducing maintenance burden and preventing inconsistencies
 """
 
 import os
+from helpers import log
+
+batch_size = 2000
 
 # ==============================================================================
 # SPARQL NAMESPACE PREFIXES
@@ -114,3 +117,6 @@ def get_prefixes_for_query(*prefix_names: str) -> str:
     if not lines:
         raise ValueError(f"No valid prefixes found in: {prefix_names}")
     return "\n".join(lines) + "\n"
+
+def prefixed_log(message: str):
+    log(f"APP: {message}")
