@@ -518,7 +518,6 @@ class PdfContentExtractionTask(Task, ABC):
         input = self.fetch_data_from_input_container()
 
         extraction_results = self.extract_content_from_pdf(input)
-        print("test: " + str(extraction_results))
         for extraction_result in extraction_results:
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
