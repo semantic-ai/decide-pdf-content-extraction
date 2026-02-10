@@ -28,7 +28,6 @@ def fail_busy_and_scheduled_tasks():
                 adms:status ?status.
             VALUES ?status {{
                 {sparql_escape_uri(JOB_STATUSES["busy"])}
-                {sparql_escape_uri(JOB_STATUSES["scheduled"])}
             }}
             }}
         }}
