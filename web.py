@@ -60,4 +60,4 @@ def get_one_open_task() -> str | None:
     """
     results = query(q)
     bindings = results.get("results", {}).get("bindings", [])
-    return bindings["task"]["value"] if bindings else None
+    return bindings[0]["task"]["value"] if bindings else None
