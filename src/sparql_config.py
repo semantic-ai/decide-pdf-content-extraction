@@ -9,8 +9,6 @@ need to be made once, reducing maintenance burden and preventing inconsistencies
 import os
 from helpers import log
 
-batch_size = 2000
-
 # ==============================================================================
 # SPARQL NAMESPACE PREFIXES
 # ==============================================================================
