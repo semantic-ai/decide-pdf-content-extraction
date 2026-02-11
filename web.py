@@ -1,17 +1,15 @@
-import os
-
 from src.job import fail_busy_and_scheduled_tasks
 from src.sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS, prefixed_log
 from src.task import Task
-from helpers import query
+from helpers import query, wait_for_triplestore
 
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
-import time
 
 
 @app.on_event("startup")
 async def startup_event():
+    wait_for_triplestore()
     # on startup fail existing busy tasks
     fail_busy_and_scheduled_tasks()
     # on startup also immediately start scheduled tasks
@@ -58,6 +56,6 @@ def get_one_open_task() -> str | None:
         }}
         limit 1
     """
-    results = query(q)
+    results = query(q, sudo=True)
     bindings = results.get("results", {}).get("bindings", [])
     return bindings[0]["task"]["value"] if bindings else None
