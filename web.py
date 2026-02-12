@@ -55,14 +55,6 @@ def delta(background_tasks: BackgroundTasks) -> NotificationResponse:
         message="Processing started",
     )
 
-@router.get("/test", status_code=202)
-def testendpoint():
-    res = query("SELECT * WHERE { ?s ?p ?o} LIMIT 1", sudo=True)
-    return {
-        "success": True,
-        "res": res
-    }
-
 def process_open_tasks():
     prefixed_log("Checking for open tasks...")
     uri = get_one_open_task()
