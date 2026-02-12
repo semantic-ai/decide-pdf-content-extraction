@@ -34,4 +34,4 @@ def fail_busy_and_scheduled_tasks():
         """
     ).substitute(graph=sparql_escape_uri(GRAPHS["jobs"]))
 
-    update(q)
+    update(q, sudo=True)
