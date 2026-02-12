@@ -159,8 +159,7 @@ class PdfContentExtractionTask(Task, ABC):
             f"""
             SELECT ?container WHERE {{
             GRAPH <{GRAPHS["jobs"]}> {{
-                BIND($task AS ?task)
-                ?task task:inputContainer ?container .
+                $task task:inputContainer ?container .
             }}
             }}
             """
@@ -168,8 +167,10 @@ class PdfContentExtractionTask(Task, ABC):
 
         bindings = query(q).get("results", {}).get("bindings", [])
         if not bindings:
-            raise RuntimeError(
-                f"No input container found for task {self.task_uri}")
+            return {
+                "filenames": [],
+                "download_urls": [],
+            }
 
         container_uri = bindings[0]["container"]["value"]
 
