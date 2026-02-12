@@ -59,7 +59,7 @@ class Task(ABC):
               ?task task:operation ?taskType .
             }
         """).substitute(uri=sparql_escape_uri(task_uri))
-        for b in query(q).get('results').get('bindings'):
+        for b in query(q, sudo=True).get('results').get('bindings'):
             candidate_cls = cls.lookup(b['taskType']['value'])
             if candidate_cls is not None:
                 return candidate_cls(task_uri)
@@ -96,9 +96,10 @@ class Task(ABC):
         query_string = status_query.substitute(
             new_status=JOB_STATUSES[new_state],
             old_status=JOB_STATUSES[old_state],
-            task=sparql_escape_uri(self.task_uri)
-        )
-        update(query_string)
+            task=sparql_escape_uri(self.task_uri),
+            results_container_line=results_container_line)
+
+        update(query_string, sudo=True)
 
         # Batch-insert results containers (if any)
         if results_container_uris:
@@ -179,8 +180,7 @@ class PdfContentExtractionTask(Task, ABC):
             f"""
             SELECT ?container WHERE {{
             GRAPH <{GRAPHS["jobs"]}> {{
-                BIND($task AS ?task)
-                ?task task:inputContainer ?container .
+                $task task:inputContainer ?container .
             }}
             }}
             """
@@ -188,8 +188,10 @@ class PdfContentExtractionTask(Task, ABC):
 
         bindings = query(q).get("results", {}).get("bindings", [])
         if not bindings:
-            raise RuntimeError(
-                f"No input container found for task {self.task_uri}")
+            return {
+                "filenames": [],
+                "download_urls": [],
+            }
 
         container_uri = bindings[0]["container"]["value"]
 
@@ -200,7 +202,7 @@ class PdfContentExtractionTask(Task, ABC):
 
     def _container_has_harvest_collection(self, container_uri: str) -> bool:
         """
-        Private helper function to determine if the input container has 
+        Private helper function to determine if the input container has
         a harvest collection (and thus if it consists of remote or local PDFs).
 
         Returns:
@@ -217,7 +219,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        return query(q).get("boolean", False)
+        return query(q, sudo=True).get("boolean", False)
 
     def _fetch_remote_files(self, container_uri: str) -> dict[str, list[str]]:
         """
@@ -247,7 +249,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             raise RuntimeError(
                 "No remote files found in harvesting collection")
@@ -288,7 +290,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             raise RuntimeError(
                 "No local share:// files found in data container")
@@ -405,7 +407,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return expression_uri
 
@@ -450,7 +452,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return manifestation_uri
 
@@ -484,7 +486,7 @@ class PdfContentExtractionTask(Task, ABC):
             expr=sparql_escape_uri(expression_uri),
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return work_uri
 
@@ -518,7 +520,7 @@ class PdfContentExtractionTask(Task, ABC):
             resource=sparql_escape_uri(resource)
         )
 
-        update(q)
+        update(q, sudo=True)
         return container_uri
 
     def process(self):
@@ -532,7 +534,6 @@ class PdfContentExtractionTask(Task, ABC):
         input = self.fetch_data_from_input_container()
 
         extraction_results = self.extract_content_from_pdf(input)
-
         for extraction_result in extraction_results:
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
