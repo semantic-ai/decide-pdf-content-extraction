@@ -1,8 +1,10 @@
 from string import Template
 
 from helpers import update, sparqlQuery, sparqlUpdate
-from src.sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS, prefixed_log
 from escape_helpers import sparql_escape_uri
+
+from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS, prefixed_log
+
 
 def fail_busy_and_scheduled_tasks():
     prefixed_log("Startup: failing busy tasks if there are any")

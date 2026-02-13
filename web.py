@@ -7,6 +7,7 @@ import time
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 
+
 def wait_for_triplestore():
     triplestore_live = False
     log("Waiting for triplestore...")

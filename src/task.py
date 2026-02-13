@@ -1,20 +1,18 @@
-import contextlib
-from datetime import datetime, timezone
-import logging
-from abc import ABC, abstractmethod
-from typing import Optional, Type, TypedDict
-from urllib.parse import parse_qs, urlparse
+import os
 import uuid
-
-from helpers import query, update, sparqlQuery, sparqlUpdate
+import logging
+import requests
+import contextlib
+import urllib.request
 
 from string import Template
+from urllib.parse import urlparse
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from typing import Optional, Type, TypedDict
+
 from escape_helpers import sparql_escape_uri, sparql_escape_string
-
-import os
-import urllib.request
-import requests
-
+from helpers import query, update
 from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 
 
@@ -141,8 +139,6 @@ class PdfContentExtractionTask(Task, ABC):
     def __init__(self, task_uri: str):
         super().__init__(task_uri)
 
-    from string import Template
-
     def fetch_data_from_input_container(self) -> dict[str, list[str]]:
         """
         Retrieve filenames and download URLs from the task's input container,
@@ -212,8 +208,8 @@ class PdfContentExtractionTask(Task, ABC):
                     - "download_urls": list[str]
         """
         q = f"""
-            {get_prefixes_for_query("task", "dct", "nfo", "nie")}
-            SELECT ?fileUrl WHERE {{
+            {get_prefixes_for_query("task", "dct", "nfo", "nie", "mu")}
+            SELECT ?fileUrl ?uuid WHERE {{
             GRAPH <{GRAPHS["data_containers"]}> {{
                 <{container_uri}> task:hasHarvestingCollection ?collection .
             }}
@@ -222,7 +218,8 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             GRAPH <{GRAPHS["remote_objects"]}> {{
                 ?remote a nfo:RemoteDataObject ;
-                        nie:url ?fileUrl .
+                    mu:uuid ?uuid ;
+                    nie:url ?fileUrl .
             }}
             }}
             """
@@ -233,11 +230,7 @@ class PdfContentExtractionTask(Task, ABC):
                 "No remote files found in harvesting collection")
 
         download_urls = [b["fileUrl"]["value"] for b in bindings]
-        filenames = [
-            parse_qs(urlparse(url).query).get(
-                "filename", [url.rsplit("/", 1)[-1]])[0]
-            for url in download_urls
-        ]
+        filenames = [b["uuid"]["value"] + ".pdf" for b in bindings]
 
         return {
             "filenames": filenames,
