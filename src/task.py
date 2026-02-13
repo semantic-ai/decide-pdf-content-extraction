@@ -12,12 +12,8 @@ from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
 
 from escape_helpers import sparql_escape_uri, sparql_escape_string
-from helpers import query, update, sparqlQuery, sparqlUpdate
+from helpers import query, update
 from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
-
-
-sparqlQuery.customHttpHeaders["mu-auth-sudo"] = "true"
-sparqlUpdate.customHttpHeaders["mu-auth-sudo"] = "true"
 
 
 class Task(ABC):
