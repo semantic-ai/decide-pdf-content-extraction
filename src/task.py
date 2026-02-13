@@ -16,10 +16,7 @@ from .title_extractor import TitleExtractor
 
 from .sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 from escape_helpers import sparql_escape_uri, sparql_escape_string
-from helpers import query, update, sparqlQuery, sparqlUpdate
-
-sparqlQuery.customHttpHeaders["mu-auth-sudo"] = "true"
-sparqlUpdate.customHttpHeaders["mu-auth-sudo"] = "true"
+from helpers import query, update
 
 
 class Task(ABC):
@@ -62,7 +59,7 @@ class Task(ABC):
               ?task task:operation ?taskType .
             }
         """).substitute(uri=sparql_escape_uri(task_uri))
-        for b in query(q).get('results').get('bindings'):
+        for b in query(q, sudo=True).get('results').get('bindings'):
             candidate_cls = cls.lookup(b['taskType']['value'])
             if candidate_cls is not None:
                 return candidate_cls(task_uri)
@@ -72,7 +69,9 @@ class Task(ABC):
 
     def change_state(self, old_state: str, new_state: str, results_container_uris: list = []) -> None:
         """Update the task status in the triplestore."""
-        query_template = Template(
+
+        # Update the task status
+        status_query = Template(
             get_prefixes_for_query("task", "adms") +
             """
             DELETE {
@@ -82,10 +81,7 @@ class Task(ABC):
             }
             INSERT {
             GRAPH <""" + GRAPHS["jobs"] + """> {
-                ?task
-                $results_container_line
-                adms:status <$new_status> .
-
+                ?task adms:status <$new_status> .
             }
             }
             WHERE {
@@ -95,20 +91,43 @@ class Task(ABC):
                 OPTIONAL { ?task adms:status ?oldStatus . }
             }
             }
-            """)
-
-        results_container_line = ""
-        if results_container_uris:
-            results_container_line = "\n".join(
-                [f"task:resultsContainer {sparql_escape_uri(uri)} ;" for uri in results_container_uris])
-
-        query_string = query_template.substitute(
+            """
+        )
+        query_string = status_query.substitute(
             new_status=JOB_STATUSES[new_state],
             old_status=JOB_STATUSES[old_state],
-            task=sparql_escape_uri(self.task_uri),
-            results_container_line=results_container_line)
+            task=sparql_escape_uri(self.task_uri)
+        )
 
-        update(query_string)
+        update(query_string, sudo=True)
+
+        # Batch-insert results containers (if any)
+        if results_container_uris:
+            BATCH_SIZE = 50
+            insert_template = Template(
+                get_prefixes_for_query("task", "adms") +
+                """
+                INSERT {
+                GRAPH <""" + GRAPHS["jobs"] + """> {
+                    ?task $results_container_line .
+                }
+                }
+                WHERE {
+                    BIND($task AS ?task)
+                }
+                """
+            )
+
+            for i in range(0, len(results_container_uris), BATCH_SIZE):
+                batch_uris = results_container_uris[i:i + BATCH_SIZE]
+                results_container_line = " ;\n".join(
+                    [f"task:resultsContainer {sparql_escape_uri(uri)}" for uri in batch_uris]
+                )
+                query_string = insert_template.substitute(
+                    task=sparql_escape_uri(self.task_uri),
+                    results_container_line=results_container_line
+                )
+                update(query_string, sudo=True)
 
     @contextlib.contextmanager
     def run(self):
@@ -161,17 +180,18 @@ class PdfContentExtractionTask(Task, ABC):
             f"""
             SELECT ?container WHERE {{
             GRAPH <{GRAPHS["jobs"]}> {{
-                BIND($task AS ?task)
-                ?task task:inputContainer ?container .
+                $task task:inputContainer ?container .
             }}
             }}
             """
         ).substitute(task=sparql_escape_uri(self.task_uri))
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
-            raise RuntimeError(
-                f"No input container found for task {self.task_uri}")
+            return {
+                "filenames": [],
+                "download_urls": [],
+            }
 
         container_uri = bindings[0]["container"]["value"]
 
@@ -182,7 +202,7 @@ class PdfContentExtractionTask(Task, ABC):
 
     def _container_has_harvest_collection(self, container_uri: str) -> bool:
         """
-        Private helper function to determine if the input container has 
+        Private helper function to determine if the input container has
         a harvest collection (and thus if it consists of remote or local PDFs).
 
         Returns:
@@ -199,7 +219,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        return query(q).get("boolean", False)
+        return query(q, sudo=True).get("boolean", False)
 
     def _fetch_remote_files(self, container_uri: str) -> dict[str, list[str]]:
         """
@@ -229,7 +249,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             raise RuntimeError(
                 "No remote files found in harvesting collection")
@@ -270,7 +290,7 @@ class PdfContentExtractionTask(Task, ABC):
             }}
             """
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             raise RuntimeError(
                 "No local share:// files found in data container")
@@ -392,7 +412,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return expression_uri
 
@@ -437,7 +457,7 @@ class PdfContentExtractionTask(Task, ABC):
             now=now,
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return manifestation_uri
 
@@ -471,7 +491,7 @@ class PdfContentExtractionTask(Task, ABC):
             expr=sparql_escape_uri(expression_uri),
         )
 
-        update(q)
+        update(q, sudo=True)
 
         return work_uri
 
@@ -486,7 +506,7 @@ class PdfContentExtractionTask(Task, ABC):
             String containing the URI of the output data container
         """
         container_id = str(uuid.uuid4())
-        container_uri = f"http://data.lblod.info/id/data-containers/{container_id}"
+        container_uri = f"http://data.lblod.info/id/data-container/{container_id}"
 
         q = Template(
             get_prefixes_for_query("task", "nfo", "mu") +
@@ -505,7 +525,7 @@ class PdfContentExtractionTask(Task, ABC):
             resource=sparql_escape_uri(resource)
         )
 
-        update(q)
+        update(q, sudo=True)
         return container_uri
 
     def split_decisions(self, text: str, extractor: TitleExtractor) -> list[dict[str, str]]:
@@ -573,7 +593,6 @@ class PdfContentExtractionTask(Task, ABC):
         input = self.fetch_data_from_input_container()
 
         extraction_results = self.extract_content_from_pdf(input)
-
         for extraction_result in extraction_results:
             language = langdetect.detect(extraction_result["content"])
             extractor = TitleExtractor(language)
