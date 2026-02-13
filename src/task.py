@@ -11,9 +11,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
 
+from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update
-from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 
 
 class Task(ABC):
@@ -66,7 +66,9 @@ class Task(ABC):
 
     def change_state(self, old_state: str, new_state: str, results_container_uris: list = []) -> None:
         """Update the task status in the triplestore."""
-        query_template = Template(
+
+        # Update the task status
+        status_query = Template(
             get_prefixes_for_query("task", "adms") +
             """
             DELETE {
@@ -76,10 +78,7 @@ class Task(ABC):
             }
             INSERT {
             GRAPH <""" + GRAPHS["jobs"] + """> {
-                ?task
-                $results_container_line
-                adms:status <$new_status> .
-
+                ?task adms:status <$new_status> .
             }
             }
             WHERE {
@@ -89,20 +88,43 @@ class Task(ABC):
                 OPTIONAL { ?task adms:status ?oldStatus . }
             }
             }
-            """)
-
-        results_container_line = ""
-        if results_container_uris:
-            results_container_line = "\n".join(
-                [f"task:resultsContainer {sparql_escape_uri(uri)} ;" for uri in results_container_uris])
-
-        query_string = query_template.substitute(
+            """
+        )
+        query_string = status_query.substitute(
             new_status=JOB_STATUSES[new_state],
             old_status=JOB_STATUSES[old_state],
-            task=sparql_escape_uri(self.task_uri),
-            results_container_line=results_container_line)
+            task=sparql_escape_uri(self.task_uri)
+        )
 
         update(query_string, sudo=True)
+
+        # Batch-insert results containers (if any)
+        if results_container_uris:
+            BATCH_SIZE = 50
+            insert_template = Template(
+                get_prefixes_for_query("task", "adms") +
+                """
+                INSERT {
+                GRAPH <""" + GRAPHS["jobs"] + """> {
+                    ?task $results_container_line .
+                }
+                }
+                WHERE {
+                    BIND($task AS ?task)
+                }
+                """
+            )
+
+            for i in range(0, len(results_container_uris), BATCH_SIZE):
+                batch_uris = results_container_uris[i:i + BATCH_SIZE]
+                results_container_line = " ;\n".join(
+                    [f"task:resultsContainer {sparql_escape_uri(uri)}" for uri in batch_uris]
+                )
+                query_string = insert_template.substitute(
+                    task=sparql_escape_uri(self.task_uri),
+                    results_container_line=results_container_line
+                )
+                update(query_string, sudo=True)
 
     @contextlib.contextmanager
     def run(self):
@@ -161,7 +183,7 @@ class PdfContentExtractionTask(Task, ABC):
             """
         ).substitute(task=sparql_escape_uri(self.task_uri))
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             return {
                 "filenames": [],
@@ -476,7 +498,7 @@ class PdfContentExtractionTask(Task, ABC):
             String containing the URI of the output data container
         """
         container_id = str(uuid.uuid4())
-        container_uri = f"http://data.lblod.info/id/data-containers/{container_id}"
+        container_uri = f"http://data.lblod.info/id/data-container/{container_id}"
 
         q = Template(
             get_prefixes_for_query("task", "nfo", "mu") +
