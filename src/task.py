@@ -13,10 +13,7 @@ from typing import Optional, Type, TypedDict
 
 from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 from escape_helpers import sparql_escape_uri, sparql_escape_string
-from helpers import query, update, sparqlQuery, sparqlUpdate
-
-sparqlQuery.customHttpHeaders["mu-auth-sudo"] = "true"
-sparqlUpdate.customHttpHeaders["mu-auth-sudo"] = "true"
+from helpers import query, update
 
 
 class Task(ABC):
@@ -96,8 +93,8 @@ class Task(ABC):
         query_string = status_query.substitute(
             new_status=JOB_STATUSES[new_state],
             old_status=JOB_STATUSES[old_state],
-            task=sparql_escape_uri(self.task_uri),
-            results_container_line=results_container_line)
+            task=sparql_escape_uri(self.task_uri)
+        )
 
         update(query_string, sudo=True)
 
@@ -127,7 +124,7 @@ class Task(ABC):
                     task=sparql_escape_uri(self.task_uri),
                     results_container_line=results_container_line
                 )
-                update(query_string)
+                update(query_string, sudo=True)
 
     @contextlib.contextmanager
     def run(self):
@@ -186,7 +183,7 @@ class PdfContentExtractionTask(Task, ABC):
             """
         ).substitute(task=sparql_escape_uri(self.task_uri))
 
-        bindings = query(q).get("results", {}).get("bindings", [])
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
             return {
                 "filenames": [],
