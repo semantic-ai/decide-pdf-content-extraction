@@ -3,6 +3,7 @@ import uuid
 import logging
 import requests
 import contextlib
+import langdetect
 import urllib.request
 
 from string import Template
@@ -11,7 +12,9 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
 
-from .sparql_config import get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
+from .segmentors import AbstractSegmentor, get_segmentor
+
+from .sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update
 
@@ -368,12 +371,13 @@ class PdfContentExtractionTask(Task, ABC):
 
         return results
 
-    def create_eli_expression(self, content: str, manifestation_uri: str) -> str:
+    def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str) -> str:
         """
         Function to create a single ELI expression from PDF content.
 
         Args:
-            content: Text extracted from the PDF
+            decision: Dictionary containing text and title of the decision
+            language: String containing the language code of the extracted content
             manifestation_uri: URI of the manifestation that embodies this expression
 
         Returns:
@@ -390,6 +394,8 @@ class PdfContentExtractionTask(Task, ABC):
             INSERT DATA {{
             GRAPH <{GRAPHS["expressions"]}> {{
                 $expr a eli:Expression ;
+                    eli:title $title ;
+                    eli:language $language ;
                     epvoc:expressionContent $content ;
                     eli:is_embodied_by $manif ;
                     dcterms:created "$now"^^xsd:dateTime ;
@@ -399,7 +405,9 @@ class PdfContentExtractionTask(Task, ABC):
             """
         ).substitute(
             expr=sparql_escape_uri(expression_uri),
-            content=sparql_escape_string(content),
+            title=f"{sparql_escape_string(decision['title'])}@{language}",
+            language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
+            content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
             now=now,
         )
@@ -520,6 +528,51 @@ class PdfContentExtractionTask(Task, ABC):
         update(q, sudo=True)
         return container_uri
 
+    def split_decisions(self, text: str, segmentor: AbstractSegmentor) -> list[dict[str, str]]:
+        """
+        Split the extracted text into individual decisions.
+
+        Args:
+            text: The full text extracted from the PDF.
+            extractor: An instance of TitleExtractor to extract titles from the text.
+        Returns:
+            A list of dictionaries, each representing an individual decision with "text" and "title" keys.
+        """
+
+        decisions = []
+        segments = segmentor.segment(text)
+        print(segments)
+        decision_titles = [
+            segment for segment in segments if segment["label"].lower() == "title"]
+
+        if len(decision_titles) == 0:
+            return [{"text": text, "title": ""}]
+        elif len(decision_titles) == 1:
+            return [{"text": text, "title": decision_titles[0]["text"]}]
+        else:
+            decision_titles_sorted = sorted(
+                decision_titles, key=lambda s: s["start"])
+
+            intro_text = text[:decision_titles_sorted[0]["start"]]
+
+            for i in range(len(decision_titles_sorted)):
+                current_title = decision_titles_sorted[i]
+                if i < len(decision_titles_sorted) - 1:
+                    next_title = decision_titles_sorted[i+1]
+                    decision_end = next_title["start"]
+                else:
+                    decision_end = len(text)
+
+                decision_text = intro_text + \
+                    text[current_title["start"]:decision_end]
+
+                decisions.append({
+                    "text": decision_text,
+                    "title": current_title["text"]
+                })
+
+            return decisions
+
     def process(self):
         """
         Implementation of Task's process function that
@@ -530,17 +583,25 @@ class PdfContentExtractionTask(Task, ABC):
         """
         input = self.fetch_data_from_input_container()
 
+        segmentor = get_segmentor()
+
         extraction_results = self.extract_content_from_pdf(input)
         for extraction_result in extraction_results:
+            language = langdetect.detect(extraction_result["content"])
+            decisions = self.split_decisions(
+                extraction_result["content"], segmentor)
+
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
-            expression_uri = self.create_eli_expression(
-                extraction_result["content"], manifestation_uri)
-            work_uri = self.create_eli_work(expression_uri)
+            for decision in decisions:
+                expression_uri = self.create_eli_expression(
+                    decision, language, manifestation_uri)
+                work_uri = self.create_eli_work(expression_uri)
+
+                self.results_container_uris.append(
+                    self.create_output_container(expression_uri))
+                self.results_container_uris.append(
+                    self.create_output_container(work_uri))
 
             self.results_container_uris.append(
                 self.create_output_container(manifestation_uri))
-            self.results_container_uris.append(
-                self.create_output_container(expression_uri))
-            self.results_container_uris.append(
-                self.create_output_container(work_uri))

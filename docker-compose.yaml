@@ -1,7 +1,9 @@
 services:
   apache_tika:
     container_name: apache_tika
-    build: ./apache-tika-service/Dockerfile
+    build:
+      context: ./../apache-tika-service
+      dockerfile: Dockerfile
     ports:
       - "9998:9998"
     networks:
