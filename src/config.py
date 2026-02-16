@@ -9,7 +9,7 @@ future settings beyond NER.
 import json
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator, ConfigDict, ValidationError
+from pydantic import BaseModel, Field, SecretStr, field_validator, ConfigDict, ValidationError
 
 
 class NerConfig(BaseModel):
@@ -35,6 +35,34 @@ class NerConfig(BaseModel):
     enable_refinement: bool = Field(
         default=True,
         description="Whether to apply entity refinement to classify generic labels (DATE, LOCATION) into specific types"
+    )
+
+
+class SegmentationConfig(BaseModel):
+    """Segmentation model configuration for document structure extraction."""
+
+    model_name: str = Field(
+        default="gpt-4.1",
+        description="LLM deployment / model name"
+    )
+    api_key: SecretStr | None = Field(
+        default=None,
+        description="API key for the LLM endpoint"
+    )
+    endpoint: str | None = Field(
+        default=None,
+        description="API endpoint URL for the LLM service"
+    )
+    max_new_tokens: int = Field(
+        default=14000,
+        ge=100,
+        description="Maximum tokens to generate"
+    )
+    temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Generation temperature (lower = more deterministic)"
     )
 
 
@@ -70,6 +98,10 @@ class AppConfig(BaseModel):
     ner: NerConfig = Field(
         default_factory=NerConfig,
         description="NER configuration settings"
+    )
+    segmentation: SegmentationConfig = Field(
+        default_factory=SegmentationConfig,
+        description="Segmentation model configuration"
     )
 
 

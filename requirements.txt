@@ -1,3 +1,5 @@
 requests==2.32.5
 langdetect==1.0.9
 transformers==5.1.0
+span-aligner==0.2.4
+openai==2.21.0

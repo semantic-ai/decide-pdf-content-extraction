@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
 
-from .title_extractor import TitleExtractor
+from .segmentors import AbstractSegmentor, get_segmentor
 
 from .sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
 from escape_helpers import sparql_escape_uri, sparql_escape_string
@@ -528,7 +528,7 @@ class PdfContentExtractionTask(Task, ABC):
         update(q, sudo=True)
         return container_uri
 
-    def split_decisions(self, text: str, extractor: TitleExtractor) -> list[dict[str, str]]:
+    def split_decisions(self, text: str, segmentor: AbstractSegmentor) -> list[dict[str, str]]:
         """
         Split the extracted text into individual decisions.
 
@@ -540,47 +540,38 @@ class PdfContentExtractionTask(Task, ABC):
         """
 
         decisions = []
-        title_entities = extractor.extract(text)
-        if not title_entities:
-            decisions = [{
-                "text": text,
-                "title": ""
-            }]
-        else:
-            intro_text = text[:title_entities[0]["start"]]
-            start_title_decision_index = title_entities[0]["start"]
-            end_title_decision_index = title_entities[0]["end"]
-            current_decision_end_index = end_title_decision_index
-            while current_decision_end_index < len(text):
-                title_entities = extractor.extract(
-                    text[(end_title_decision_index):])
-                if title_entities != []:
-                    if title_entities[0]["start"] != title_entities[0]["end"]:
-                        current_decision_end_index = end_title_decision_index + \
-                            title_entities[0]["start"]
-                        decisions.append({
-                            "text": intro_text + text[start_title_decision_index:current_decision_end_index],
-                            "title": text[start_title_decision_index:end_title_decision_index]
-                        })
-                        start_title_decision_index = current_decision_end_index
-                        end_title_decision_index = current_decision_end_index + \
-                            title_entities[0]["end"]
-                    else:
-                        current_decision_end_index = len(text)
-                        decisions.append({
-                            "text": intro_text + text[start_title_decision_index:],
-                            "title": text[start_title_decision_index:end_title_decision_index]
-                        })
-                        break
-                else:
-                    current_decision_end_index = len(text)
-                    decisions.append({
-                        "text": intro_text + text[start_title_decision_index:],
-                        "title": text[start_title_decision_index:end_title_decision_index]
-                    })
-                    break
+        segments = segmentor.segment(text)
+        print(segments)
+        decision_titles = [
+            segment for segment in segments if segment["label"].lower() == "title"]
 
-        return decisions
+        if len(decision_titles) == 0:
+            return [{"text": text, "title": ""}]
+        elif len(decision_titles) == 1:
+            return [{"text": text, "title": decision_titles[0]["text"]}]
+        else:
+            decision_titles_sorted = sorted(
+                decision_titles, key=lambda s: s["start"])
+
+            intro_text = text[:decision_titles_sorted[0]["start"]]
+
+            for i in range(len(decision_titles_sorted)):
+                current_title = decision_titles_sorted[i]
+                if i < len(decision_titles_sorted) - 1:
+                    next_title = decision_titles_sorted[i+1]
+                    decision_end = next_title["start"]
+                else:
+                    decision_end = len(text)
+
+                decision_text = intro_text + \
+                    text[current_title["start"]:decision_end]
+
+                decisions.append({
+                    "text": decision_text,
+                    "title": current_title["text"]
+                })
+
+            return decisions
 
     def process(self):
         """
@@ -592,12 +583,13 @@ class PdfContentExtractionTask(Task, ABC):
         """
         input = self.fetch_data_from_input_container()
 
+        segmentor = get_segmentor()
+
         extraction_results = self.extract_content_from_pdf(input)
         for extraction_result in extraction_results:
             language = langdetect.detect(extraction_result["content"])
-            extractor = TitleExtractor(language)
             decisions = self.split_decisions(
-                extraction_result["content"], extractor)
+                extraction_result["content"], segmentor)
 
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
