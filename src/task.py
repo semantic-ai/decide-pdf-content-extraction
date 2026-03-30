@@ -14,140 +14,15 @@ from typing import Optional, Type, TypedDict
 
 from .segmentors import AbstractSegmentor, get_segmentor
 
-from .sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, JOB_STATUSES, TASK_OPERATIONS
+from decide_ai_service_base.task import DecisionTask
+from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AI_COMPONENTS, AGENT_TYPES
+from decide_ai_service_base.annotation import RelationExtractionAnnotation
+
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update
 
 
-class Task(ABC):
-    """Base class for background tasks that process data from the triplestore."""
-
-    def __init__(self, task_uri: str):
-        super().__init__()
-        self.task_uri = task_uri
-        self.results_container_uris = []
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    @classmethod
-    def supported_operations(cls) -> list[Type['Task']]:
-        all_ops = []
-        for subclass in cls.__subclasses__():
-            if hasattr(subclass, '__task_type__'):
-                all_ops.append(subclass)
-            else:
-                all_ops.extend(subclass.supported_operations())
-        return all_ops
-
-    @classmethod
-    def lookup(cls, task_type: str) -> Optional['Task']:
-        """
-        Yield all subclasses of the given class, per:
-        """
-        for subclass in cls.supported_operations():
-            if hasattr(subclass, '__task_type__') and subclass.__task_type__ == task_type:
-                return subclass
-        return None
-
-    @classmethod
-    def from_uri(cls, task_uri: str) -> 'Task':
-        """Create a Task instance from its URI in the triplestore."""
-        q = Template(
-            get_prefixes_for_query("adms", "task") +
-            """
-            SELECT ?task ?taskType WHERE {
-              BIND($uri AS ?task)
-              ?task task:operation ?taskType .
-            }
-        """).substitute(uri=sparql_escape_uri(task_uri))
-        for b in query(q, sudo=True).get('results').get('bindings'):
-            candidate_cls = cls.lookup(b['taskType']['value'])
-            if candidate_cls is not None:
-                return candidate_cls(task_uri)
-            raise RuntimeError(
-                "Unknown task type {0}".format(b['taskType']['value']))
-        raise RuntimeError("Task with uri {0} not found".format(task_uri))
-
-    def change_state(self, old_state: str, new_state: str, results_container_uris: list = []) -> None:
-        """Update the task status in the triplestore."""
-
-        # Update the task status
-        status_query = Template(
-            get_prefixes_for_query("task", "adms") +
-            """
-            DELETE {
-            GRAPH <""" + GRAPHS["jobs"] + """> {
-                ?task adms:status ?oldStatus .
-            }
-            }
-            INSERT {
-            GRAPH <""" + GRAPHS["jobs"] + """> {
-                ?task adms:status <$new_status> .
-            }
-            }
-            WHERE {
-            GRAPH <""" + GRAPHS["jobs"] + """> {
-                BIND($task AS ?task)
-                BIND(<$old_status> AS ?oldStatus)
-                OPTIONAL { ?task adms:status ?oldStatus . }
-            }
-            }
-            """
-        )
-        query_string = status_query.substitute(
-            new_status=JOB_STATUSES[new_state],
-            old_status=JOB_STATUSES[old_state],
-            task=sparql_escape_uri(self.task_uri)
-        )
-
-        update(query_string, sudo=True)
-
-        # Batch-insert results containers (if any)
-        if results_container_uris:
-            BATCH_SIZE = 50
-            insert_template = Template(
-                get_prefixes_for_query("task", "adms") +
-                """
-                INSERT {
-                GRAPH <""" + GRAPHS["jobs"] + """> {
-                    ?task $results_container_line .
-                }
-                }
-                WHERE {
-                    BIND($task AS ?task)
-                }
-                """
-            )
-
-            for i in range(0, len(results_container_uris), BATCH_SIZE):
-                batch_uris = results_container_uris[i:i + BATCH_SIZE]
-                results_container_line = " ;\n".join(
-                    [f"task:resultsContainer {sparql_escape_uri(uri)}" for uri in batch_uris]
-                )
-                query_string = insert_template.substitute(
-                    task=sparql_escape_uri(self.task_uri),
-                    results_container_line=results_container_line
-                )
-                update(query_string, sudo=True)
-
-    @contextlib.contextmanager
-    def run(self):
-        """Context manager for task execution with state transitions."""
-        self.change_state("scheduled", "busy")
-        yield
-        self.change_state("busy", "success", self.results_container_uris)
-
-    def execute(self):
-        """Run the task and handle state transitions."""
-        with self.run():
-            self.process()
-
-    @abstractmethod
-    def process(self):
-        """Process task data (implemented by subclasses)."""
-        pass
-
-
-class PdfContentExtractionTask(Task, ABC):
+class PdfContentExtractionTask(DecisionTask, ABC):
     """
     Task that processes PDFs and extracts their content to generate an ELI manifestation,
     expression and work, stored in the task's output data container.
