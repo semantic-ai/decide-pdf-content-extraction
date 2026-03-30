@@ -269,7 +269,6 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             INSERT DATA {{
             GRAPH <{GRAPHS["expressions"]}> {{
                 $expr a eli:Expression ;
-                    eli:title $title ;
                     eli:language $language ;
                     epvoc:expressionContent $content ;
                     eli:is_embodied_by $manif ;
@@ -280,7 +279,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             """
         ).substitute(
             expr=sparql_escape_uri(expression_uri),
-            title=f"{sparql_escape_string(decision['title'])}@{language}",
+            # title=f"{sparql_escape_string(decision['title'])}@{language}",
             language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
             content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
@@ -290,6 +289,33 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         update(q, sudo=True)
 
         return expression_uri
+
+    def create_title_annotation(self, decision: dict[str, str], language: str, eli_work_uri: str) -> str:
+        """
+        Function to create a title annotation for an ELI Work.
+
+        Args:
+            decision: Dictionary containing text, title, title_start, and title_end of the decision
+            language: String containing the language code of the extracted content
+            eli_work_uri: URI of the ELI Work for which the title annotation is created
+        Returns:
+            The created annotation URI
+        """
+
+        title_uri = RelationExtractionAnnotation(
+            subject=eli_work_uri,
+            predicate="dct:title",
+            obj=f"{sparql_escape_string(decision['title'])}@{language}",
+            activity_id=self.task_uri,
+            source_uri=eli_work_uri,
+            start=decision.get('title_start'),
+            end=decision.get('title_end'),
+            agent=AI_COMPONENTS["segmenter"],
+            agent_type=AGENT_TYPES["ai_component"],
+            confidence=1.0
+        ).add_to_triplestore_if_not_exists()
+
+        return title_uri
 
     def create_manifestation(self, byte_size: int, pdf_url: str) -> str:
         """
@@ -411,7 +437,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             text: The full text extracted from the PDF.
             extractor: An instance of TitleExtractor to extract titles from the text.
         Returns:
-            A list of dictionaries, each representing an individual decision with "text" and "title" keys.
+            A list of dictionaries, each representing an individual decision
+            with "text", "title", "title_start", and "title_end" keys.
         """
 
         decisions = []
@@ -421,9 +448,16 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             segment for segment in segments if segment["label"].lower() == "title"]
 
         if len(decision_titles) == 0:
-            return [{"text": text, "title": ""}]
+            return [{"text": text,
+                     "title": "",
+                     "title_start": None,
+                     "title_end": None}]
+
         elif len(decision_titles) == 1:
-            return [{"text": text, "title": decision_titles[0]["text"]}]
+            return [{"text": text,
+                     "title": decision_titles[0]["text"],
+                     "title_start": decision_titles[0]["start"],
+                     "title_end": decision_titles[0]["end"]}]
         else:
             decision_titles_sorted = sorted(
                 decision_titles, key=lambda s: s["start"])
@@ -443,7 +477,9 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
                 decisions.append({
                     "text": decision_text,
-                    "title": current_title["text"]
+                    "title": current_title["text"],
+                    "title_start": len(intro_text),
+                    "title_end": len(intro_text) + (current_title["end"] - current_title["start"])
                 })
 
             return decisions
@@ -472,11 +508,16 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 expression_uri = self.create_eli_expression(
                     decision, language, manifestation_uri)
                 work_uri = self.create_eli_work(expression_uri)
+                title_uri = self.create_title_annotation(decision,
+                                                         language,
+                                                         work_uri)
 
                 self.results_container_uris.append(
                     self.create_output_container(expression_uri))
                 self.results_container_uris.append(
                     self.create_output_container(work_uri))
+                self.results_container_uris.append(
+                    self.create_output_container(title_uri))
 
             self.results_container_uris.append(
                 self.create_output_container(manifestation_uri))
