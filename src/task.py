@@ -286,7 +286,6 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             """
         ).substitute(
             expr=sparql_escape_uri(expression_uri),
-            # title=f"{sparql_escape_string(decision['title'])}@{language}",
             language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
             content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
