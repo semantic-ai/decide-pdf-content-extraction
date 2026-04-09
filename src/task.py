@@ -268,14 +268,16 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         now = datetime.now(timezone.utc).astimezone(
         ).isoformat(timespec="seconds")
 
-        expression_uri = f"http://data.lblod.info/id/expressions/{uuid.uuid4()}"
+        expression_uuid = str(uuid.uuid4())
+        expression_uri = f"http://data.lblod.info/id/expressions/{expression_uuid}"
 
         q = Template(
-            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd")
+            get_prefixes_for_query("mu", "eli", "epvoc", "dcterms", "xsd")
             + f"""
             INSERT DATA {{
             GRAPH <{GRAPHS["expressions"]}> {{
                 $expr a eli:Expression ;
+                    mu:uuid $uuid ;
                     eli:language $language ;
                     epvoc:expressionContent $content ;
                     eli:is_embodied_by $manif ;
@@ -286,6 +288,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             """
         ).substitute(
             expr=sparql_escape_uri(expression_uri),
+            uuid=sparql_escape_string(expression_uuid),
             language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
             content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
