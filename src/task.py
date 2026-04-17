@@ -302,24 +302,24 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return expression_uri
 
-    def create_title_annotation(self, decision: dict[str, str], language: str, eli_work_uri: str) -> str:
+    def create_title_annotation(self, decision: dict[str, str], language: str, eli_expression_uri: str) -> str:
         """
-        Function to create a title annotation for an ELI Work.
+        Function to create a title annotation for an ELI Expression.
 
         Args:
             decision: Dictionary containing text, title, title_start, and title_end of the decision
             language: String containing the language code of the extracted content
-            eli_work_uri: URI of the ELI Work for which the title annotation is created
+            eli_expression_uri: URI of the ELI expression for which the title annotation is created
         Returns:
             The created annotation URI
         """
 
         title_uri = RelationExtractionAnnotation(
-            subject=eli_work_uri,
-            predicate="dct:title",
+            subject=eli_expression_uri,
+            predicate="eli:title",
             obj=f"{sparql_escape_string(decision['title'])}@{language}",
             activity_id=self.task_uri,
-            source_uri=eli_work_uri,
+            source_uri=eli_expression_uri,
             start=decision.get('title_start'),
             end=decision.get('title_end'),
             agent=AI_COMPONENTS["segmenter"],
@@ -525,7 +525,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     decision, language, manifestation_uri, expression_uuid, work_uri)                
                 title_uri = self.create_title_annotation(decision,
                                                          language,
-                                                         work_uri)
+                                                         expression_uri)
 
                 self.results_container_uris.append(
                     self.create_output_container(expression_uri))
