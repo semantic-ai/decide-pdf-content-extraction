@@ -15,7 +15,7 @@ from typing import Optional, Type, TypedDict
 from .segmentors import AbstractSegmentor, get_segmentor
 
 from decide_ai_service_base.task import DecisionTask
-from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AI_COMPONENTS, AGENT_TYPES
+from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AI_COMPONENTS, AGENT_TYPES, SPARQL_PREFIXES
 from decide_ai_service_base.annotation import RelationExtractionAnnotation
 
 from escape_helpers import sparql_escape_uri, sparql_escape_string
@@ -253,7 +253,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return results
 
-    def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str) -> str:
+    def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str, expression_uuid: str, work_uri: str) -> str:
         """
         Function to create a single ELI expression from PDF content.
 
@@ -261,6 +261,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             decision: Dictionary containing text and title of the decision
             language: String containing the language code of the extracted content
             manifestation_uri: URI of the manifestation that embodies this expression
+            expression_uuid: Pre-generated UUID for the expression
+            work_uri: URI of the ELI Work this expression realizes
 
         Returns:
             The created ELI expression URI
@@ -268,8 +270,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         now = datetime.now(timezone.utc).astimezone(
         ).isoformat(timespec="seconds")
 
-        expression_uuid = str(uuid.uuid4())
-        expression_uri = f"http://data.lblod.info/id/expressions/{expression_uuid}"
+        expression_uri = f"{SPARQL_PREFIXES['expressions']}{expression_uuid}"
 
         q = Template(
             get_prefixes_for_query("mu", "eli", "epvoc", "dcterms", "xsd")
@@ -281,6 +282,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     eli:language $language ;
                     epvoc:expressionContent $content ;
                     eli:is_embodied_by $manif ;
+                    eli:realizes $work ;
                     dcterms:created "$now"^^xsd:dateTime ;
                     dcterms:modified "$now"^^xsd:dateTime .
             }}
@@ -292,6 +294,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             language=sparql_escape_uri(LANGUAGE_CODE_TO_URI.get(language)),
             content=f"{sparql_escape_string(decision['text'])}@{language}",
             manif=sparql_escape_uri(manifestation_uri),
+            work=sparql_escape_uri(work_uri),
             now=now,
         )
 
@@ -371,18 +374,19 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return manifestation_uri
 
-    def create_eli_work(self, expression_uri: str) -> str:
+    def create_eli_work(self, expression_uuid: str, work_uuid: str) -> str:
         """
         Function to create a single ELI expression work.
 
         Args:
-            expression_uri: URI of the expression that realizes this work.
+            expression_uuid: Pre-generated UUID of the expression that realizes this work.
+            work_uuid: Pre-generated UUID for the work.
 
         Returns:
             The created work URI.
         """
-        work_uuid = str(uuid.uuid4())
-        work_uri = f"http://data.lblod.info/id/works/{work_uuid}"
+        expression_uri = f"{SPARQL_PREFIXES['expressions']}{expression_uuid}"
+        work_uri = f"{SPARQL_PREFIXES['works']}{work_uuid}"
 
         q = Template(
             get_prefixes_for_query("eli", "mu")
@@ -514,9 +518,11 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             manifestation_uri = self.create_manifestation(
                 extraction_result["byte_size"], extraction_result["pdf_url"])
             for decision in decisions:
+                expression_uuid = str(uuid.uuid4())
+                work_uuid = str(uuid.uuid4())
+                work_uri = self.create_eli_work(expression_uuid, work_uuid)
                 expression_uri = self.create_eli_expression(
-                    decision, language, manifestation_uri)
-                work_uri = self.create_eli_work(expression_uri)
+                    decision, language, manifestation_uri, expression_uuid, work_uri)                
                 title_uri = self.create_title_annotation(decision,
                                                          language,
                                                          work_uri)
