@@ -428,14 +428,14 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             INSERT DATA {{
             GRAPH <{GRAPHS["data_containers"]}> {{
                 $container a nfo:DataContainer ;
-                    mu:uuid "$uuid" ;
+                    mu:uuid $uuid ;
                     task:hasResource $resource .
             }}
             }}
             """
         ).substitute(
             container=sparql_escape_uri(container_uri),
-            uuid=container_id,
+            uuid=sparql_escape_string(container_id),
             resource=sparql_escape_uri(resource)
         )
 
