@@ -440,7 +440,7 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 14000, text_limit_chars: int = 28000):
+    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000):
         super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
