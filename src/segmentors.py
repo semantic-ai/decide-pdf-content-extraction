@@ -440,8 +440,9 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 14000):
+    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 14000, text_limit_chars: int = 28000):
         super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
+        self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
 
@@ -472,7 +473,7 @@ class LLMSegmentor(AbstractSegmentor):
                 expected_schema=self.RESULTS_SCHEMA_SEGMENTATION,
                 max_tokens=self.max_new_tokens,
                 temperature=self.temperature,
-                text_limit=28000
+                text_limit=self.text_limit_chars
             )
         except Exception as e:
             self.logger.error(f"LLM segmentation failed: {e}")
@@ -534,4 +535,5 @@ def get_segmentor() -> AbstractSegmentor:
             model_name=seg_config.model_name,
             temperature=seg_config.temperature,
             max_new_tokens=seg_config.max_new_tokens,
+            text_limit_chars=seg_config.text_limit_chars,
         )

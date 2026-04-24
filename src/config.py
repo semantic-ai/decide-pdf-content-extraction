@@ -58,6 +58,11 @@ class SegmentationConfig(BaseModel):
         ge=100,
         description="Maximum tokens to generate"
     )
+    text_limit_chars: int = Field(
+        default=100000,
+        ge=1000,
+        description="Maximum characters of document text sent to the LLM; longer documents are silently truncated"
+    )
     temperature: float = Field(
         default=0.0,
         ge=0.0,
