@@ -3,7 +3,7 @@ import re
 import asyncio
 from abc import ABC, abstractmethod
 from span_aligner import SpanAligner
-from typing import Optional, Any, Type, List, Dict
+from typing import Any, List, Dict, Tuple
 
 from .config import get_config
 
@@ -23,13 +23,14 @@ from .LLMAnalyzer import LLMAnalyzer
 class AbstractSegmentor(ABC):
     """Abstract base class for a segmentation strategy."""
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000):
+    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000, text_limit_chars: int = 100000):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.api_key = api_key
         self.endpoint = endpoint
         self.model_name = model_name
         self.temperature = temperature
         self.max_new_tokens = max_new_tokens
+        self.text_limit_chars = text_limit_chars
 
     @abstractmethod
     def segment(self, text: str) -> List[Dict[str, Any]]:
@@ -283,6 +284,8 @@ class LLMSegmentor(AbstractSegmentor):
 
     LABEL_MAPPING = {
         "decision_title": "TITLE",
+        "document_title": "DOCUMENT_TITLE",
+        "decision_outcome": "DECISION_OUTCOME",
         "participants": "PARTICIPANTS",
         "motivation": "MOTIVATION",
         "previous_decisions": "PREVIOUS DECISIONS",
@@ -291,7 +294,9 @@ class LLMSegmentor(AbstractSegmentor):
         "article": "ARTICLE",
         "voting": "VOTING",
         "administrative_body": "ADMINISTRATIVE BODY",
-        "publication_date": "PUBLICATION DATE"
+        "publication_date": "PUBLICATION DATE",
+        "attachments": "ATTACHMENTS",
+        "attachment": "ATTACHMENT",
     }
 
     SYSTEM_PROMPT_REFERENCES_SEGMENTATION = """
@@ -440,8 +445,13 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 14000):
-        super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
+    _CHUNK_SAFETY_RATIO: float = 0.85
+    _CHUNK_OVERLAP_CHARS: int = 2000
+
+    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, text_limit_chars: int = 100000):
+        # Input chars / 4 ≈ tokens; +20% overhead for inserted tags
+        max_output_tokens = int(text_limit_chars / 4 * 1.2)
+        super().__init__(api_key, endpoint, model_name, temperature, max_output_tokens, text_limit_chars)
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
 
@@ -452,7 +462,6 @@ class LLMSegmentor(AbstractSegmentor):
         )
 
     def format_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
-
         return {
             "label": segment.get("labels", [])[0] if segment.get("labels") else "UNKNOWN",
             "start": segment.get("start", 0),
@@ -460,42 +469,168 @@ class LLMSegmentor(AbstractSegmentor):
             "text": segment.get("text", "")
         }
 
-    async def async_segment(self, text: str) -> List[Dict[str, Any]]:
-        self.logger.info(
-            f"Running LLM segmentation with {self.analyzer.deployment}...")
+    def _build_chunks(self, text: str, chunk_size: int) -> List[Tuple[int, str]]:
+        """Split text into overlapping chunks, snapping cuts to natural boundaries."""
+        chunks: List[Tuple[int, str]] = []
+        text_len = len(text)
+        pos = 0
+        search_window = min(500, chunk_size // 4)
+
+        while pos < text_len:
+            ideal_end = pos + chunk_size
+
+            if ideal_end >= text_len:
+                chunks.append((pos, text[pos:]))
+                break
+
+            search_start = max(pos, ideal_end - search_window)
+            region = text[search_start:ideal_end]
+            snap_pos = None
+
+            idx = region.rfind('\n\n')
+            if idx != -1:
+                snap_pos = search_start + idx + 2
+
+            if snap_pos is None:
+                matches = list(re.finditer(r'[.!?](?=[ \t\n])', region))
+                if matches:
+                    snap_pos = search_start + matches[-1].end()
+
+            if snap_pos is None:
+                idx = region.rfind('\n')
+                if idx != -1:
+                    snap_pos = search_start + idx + 1
+
+            if snap_pos is None or snap_pos <= pos:
+                snap_pos = ideal_end
+
+            chunks.append((pos, text[pos:snap_pos]))
+            pos = max(pos + 1, snap_pos - self._CHUNK_OVERLAP_CHARS)
+
+        self.logger.debug(
+            f"Split {text_len} chars into {len(chunks)} chunks "
+            f"(target={chunk_size}, overlap={self._CHUNK_OVERLAP_CHARS})"
+        )
+        return chunks
+
+    async def _segment_single_chunk(self, chunk_text: str, chunk_offset: int) -> List[Dict[str, Any]]:
+        """Run LLM + SpanAligner on one chunk; return segments with absolute offsets."""
+        self.logger.debug(f"Chunk offset={chunk_offset}: {len(chunk_text)} chars (~{len(chunk_text) // 4} tokens)")
 
         try:
             result = await self.analyzer.analyze_single_entry(
-                text=text,
+                text=chunk_text,
                 system_prompt=self.SYSTEM_PROMPT_REFERENCES_SEGMENTATION,
                 user_prompt_template=self.USER_PROMPT_TEMPLATE_REFERENCES_SEGMENTATION,
                 expected_schema=self.RESULTS_SCHEMA_SEGMENTATION,
                 max_tokens=self.max_new_tokens,
                 temperature=self.temperature,
-                text_limit=28000
+                text_limit=len(chunk_text),  # chunk already sized; prevent re-truncation
             )
         except Exception as e:
-            self.logger.error(f"LLM segmentation failed: {e}")
+            self.logger.error(f"LLM call failed at offset={chunk_offset}: {e}")
             return []
 
-        tagged_text = result.get("tagged_text", "")
+        tagged_text = result.get("tagged_text", "") or ""
+        classification = result.get("document_classification", "")
+
         if not tagged_text:
-            self.logger.warning("LLM returned empty tagged text.")
+            self.logger.warning(f"Empty tagged_text at offset={chunk_offset} (classification={classification!r})")
             return []
 
-        # Project the tags onto the original text
-        mapped_tagged_text = SpanAligner.map_tags_to_original(
-            original_text=text,
+        self.logger.debug(f"Chunk offset={chunk_offset}: {len(tagged_text)} chars tagged, classification={classification!r}")
+
+        mapped = SpanAligner.map_tags_to_original(
+            original_text=chunk_text,
             tagged_text=tagged_text,
             min_ratio=0.7,
             max_dist=200,
         )
-        # Fix tags just in case, though LLM should be better
-        annotations = SpanAligner.get_annotations_from_tagged_text(
-            mapped_tagged_text,
-            span_map=self.LABEL_MAPPING
+        annotations = SpanAligner.get_annotations_from_tagged_text(mapped, span_map=self.LABEL_MAPPING)
+
+        raw_spans = annotations.get("spans", [])
+        segments = []
+        for span in raw_spans:
+            seg = self.format_segment(span)
+            seg["start"] += chunk_offset
+            seg["end"] += chunk_offset
+            segments.append(seg)
+
+        by_label: Dict[str, int] = {}
+        for s in segments:
+            by_label[s.get("label", "")] = by_label.get(s.get("label", ""), 0) + 1
+        self.logger.debug(f"Chunk offset={chunk_offset}: {len(raw_spans)} raw spans -> {len(segments)} segments {by_label}")
+
+        return segments
+
+    def _deduplicate_segments(self, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Drop same-label duplicates introduced by chunk overlap zones.
+
+        Cross-label overlap is intentional and never collapsed. Only same-label pairs
+        where one span covers >50% of the other are treated as duplicates.
+        """
+        sorted_segs = sorted(segments, key=lambda s: (s["start"], -(s["end"] - s["start"])))
+        accepted: List[Dict[str, Any]] = []
+        dropped_counts: Dict[str, int] = {}
+
+        for candidate in sorted_segs:
+            start, end, label = candidate["start"], candidate["end"], candidate.get("label", "")
+            length = end - start
+
+            if end < start:
+                self.logger.warning(f"Dropping malformed segment [{start}:{end}] ({label})")
+                continue
+            if length == 0:
+                continue
+
+            is_duplicate = False
+            for existing in accepted:
+                if existing.get("label", "") != label:
+                    continue
+                overlap = max(0, min(end, existing["end"]) - max(start, existing["start"]))
+                if overlap == 0:
+                    continue
+                smaller = min(length, existing["end"] - existing["start"])
+                if smaller > 0 and overlap / smaller > 0.5:
+                    is_duplicate = True
+                    break
+
+            if is_duplicate:
+                dropped_counts[label] = dropped_counts.get(label, 0) + 1
+            else:
+                accepted.append(candidate)
+
+        by_label: Dict[str, int] = {}
+        for s in accepted:
+            by_label[s.get("label", "")] = by_label.get(s.get("label", ""), 0) + 1
+        self.logger.info(f"Dedup: {len(segments)} -> {len(accepted)} kept {by_label}; dropped {dropped_counts}")
+        return accepted
+
+    async def async_segment(self, text: str) -> List[Dict[str, Any]]:
+        chunk_size_limit = int(self.text_limit_chars * self._CHUNK_SAFETY_RATIO)
+        self.logger.info(
+            f"Starting segmentation: {len(text)} chars, limit={self.text_limit_chars}, "
+            f"chunk_threshold={chunk_size_limit}"
         )
-        return [self.format_segment(span) for span in annotations.get("spans", [])]
+
+        if len(text) <= chunk_size_limit:
+            self.logger.debug("Single-chunk path")
+            return await self._segment_single_chunk(text, chunk_offset=0)
+
+        chunks = self._build_chunks(text, chunk_size_limit)
+        self.logger.info(f"Chunked mode: {len(chunks)} chunks")
+
+        all_segments: List[Dict[str, Any]] = []
+        for i, (offset, chunk) in enumerate(chunks):
+            self.logger.debug(f"Processing chunk {i + 1}/{len(chunks)} offset={offset} len={len(chunk)}")
+            segs = await self._segment_single_chunk(chunk, offset)
+            self.logger.debug(f"Chunk {i + 1} returned {len(segs)} segments")
+            all_segments.extend(segs)
+
+        self.logger.info(f"Total raw: {len(all_segments)} segments across {len(chunks)} chunks")
+        result = self._deduplicate_segments(all_segments)
+        self.logger.info(f"After dedup: {len(result)} segments")
+        return result
 
     def segment(self, text: str) -> List[Dict[str, Any]]:
         # Check for existing event loop
@@ -533,5 +668,5 @@ def get_segmentor() -> AbstractSegmentor:
             endpoint=seg_config.endpoint,
             model_name=seg_config.model_name,
             temperature=seg_config.temperature,
-            max_new_tokens=seg_config.max_new_tokens,
+            text_limit_chars=seg_config.text_limit_chars,
         )

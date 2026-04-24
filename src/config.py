@@ -9,7 +9,7 @@ future settings beyond NER.
 import json
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, Field, SecretStr, field_validator, ConfigDict, ValidationError
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator, ConfigDict, ValidationError
 
 
 class NerConfig(BaseModel):
@@ -53,10 +53,25 @@ class SegmentationConfig(BaseModel):
         default=None,
         description="API endpoint URL for the LLM service"
     )
-    max_new_tokens: int = Field(
-        default=14000,
-        ge=100,
-        description="Maximum tokens to generate"
+    model_output_cap_tokens: int | None = Field(
+        default=None,
+        ge=1000,
+        description=(
+            "Hard output-token ceiling of the model (e.g. 8192 for Mistral Large, "
+            "32768 for gpt-4.1). When set, text_limit_chars is validated against it "
+            "at startup. When omitted, no cap check is performed."
+        )
+    )
+    text_limit_chars: int = Field(
+        default=12000,
+        ge=1000,
+        description=(
+            "Maximum characters of PDF text sent to the LLM per call. "
+            "The output budget is auto-derived as int(text_limit_chars / 4 * 1.2) "
+            "to account for ~4 chars/token and 20 % tag-insertion overhead. "
+            "When model_output_cap_tokens is set, validated at startup so the "
+            "derived output budget never exceeds the model cap."
+        )
     )
     temperature: float = Field(
         default=0.0,
@@ -64,6 +79,21 @@ class SegmentationConfig(BaseModel):
         le=2.0,
         description="Generation temperature (lower = more deterministic)"
     )
+
+    @model_validator(mode='after')
+    def text_limit_within_model_output_cap(self) -> 'SegmentationConfig':
+        if self.model_output_cap_tokens is None:
+            return self
+        max_safe_chars = int(self.model_output_cap_tokens * 4 / 1.2)
+        if self.text_limit_chars > max_safe_chars:
+            raise ValueError(
+                f"text_limit_chars={self.text_limit_chars} would require "
+                f"~{int(self.text_limit_chars / 4 * 1.2)} output tokens but "
+                f"model_output_cap_tokens={self.model_output_cap_tokens} "
+                f"(safe limit: {max_safe_chars} chars). "
+                f"Reduce text_limit_chars or increase model_output_cap_tokens."
+            )
+        return self
 
 
 class AppSettingsConfig(BaseModel):
