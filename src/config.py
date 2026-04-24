@@ -9,7 +9,7 @@ future settings beyond NER.
 import json
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, Field, SecretStr, field_validator, ConfigDict, ValidationError
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator, ConfigDict, ValidationError
 
 
 class NerConfig(BaseModel):
@@ -54,7 +54,7 @@ class SegmentationConfig(BaseModel):
         description="API endpoint URL for the LLM service"
     )
     max_new_tokens: int = Field(
-        default=14000,
+        default=26000,
         ge=100,
         description="Maximum tokens to generate"
     )
@@ -69,6 +69,16 @@ class SegmentationConfig(BaseModel):
         le=2.0,
         description="Generation temperature (lower = more deterministic)"
     )
+
+    @model_validator(mode="after")
+    def max_new_tokens_exceeds_text_limit(self) -> "SegmentationConfig":
+        # A rough upper bound: 1 char ≈ 0.25 tokens, so output tokens must cover at least the input chars
+        if self.max_new_tokens < self.text_limit_chars // 4:
+            raise ValueError(
+                f"max_new_tokens ({self.max_new_tokens}) is too low for text_limit_chars "
+                f"({self.text_limit_chars}); set max_new_tokens >= {self.text_limit_chars // 4}"
+            )
+        return self
 
 
 class AppSettingsConfig(BaseModel):
