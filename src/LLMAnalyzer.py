@@ -51,9 +51,9 @@ class LLMAnalyzer:
                                    system_prompt: str,
                                    user_prompt_template: str,
                                    expected_schema: Dict[str, Any],
-                                   max_tokens: int = 8000,
+                                   max_tokens: int = 120000,
                                    temperature: float = 0.1,
-                                   text_limit: int = 8000) -> Dict[str, Any]:
+                                   text_limit: int = 100000) -> Dict[str, Any]:
 
         user_prompt = user_prompt_template.format(text=text[:text_limit])
 
