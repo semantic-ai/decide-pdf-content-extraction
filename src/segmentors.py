@@ -403,6 +403,7 @@ class LLMSegmentor(AbstractSegmentor):
 
     IF classification is one of "Minute" or "Minutes":
     - Tag the following municipal decision text by inserting ONLY the specified tags inline, preserving every character and the original layout exactly. Do not remove, move, or change any text beyond inserting tags.
+    - IMPORTANT: Tag ALL decisions present in the full document from start to finish. Do not stop after a few decisions, continue tagging until the very end of the text.
 
     Allowed Tags (exactly as listed):
     <document_title>, <decision_title>, <decision_outcome>, <administrative_body>, <publication_date>, <participants>, <motivation>, <previous_decisions>, <legal_framework>, <decision>, <article>, <voting>, <attachments>, <attachment>
@@ -489,7 +490,7 @@ class LLMSegmentor(AbstractSegmentor):
             original_text=text,
             tagged_text=tagged_text,
             min_ratio=0.7,
-            max_dist=200,
+            max_dist=2000,
         )
         # Fix tags just in case, though LLM should be better
         annotations = SpanAligner.get_annotations_from_tagged_text(
