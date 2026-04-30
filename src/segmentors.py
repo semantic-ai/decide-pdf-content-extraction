@@ -403,6 +403,7 @@ class LLMSegmentor(AbstractSegmentor):
 
     IF classification is one of "Minute" or "Minutes":
     - Tag the following municipal decision text by inserting ONLY the specified tags inline, preserving every character and the original layout exactly. Do not remove, move, or change any text beyond inserting tags.
+    - IMPORTANT: Tag ALL decisions present in the full document from start to finish. Do not stop after a few decisions, continue tagging until the very end of the text.
 
     Allowed Tags (exactly as listed):
     <document_title>, <decision_title>, <decision_outcome>, <administrative_body>, <publication_date>, <participants>, <motivation>, <previous_decisions>, <legal_framework>, <decision>, <article>, <voting>, <attachments>, <attachment>
@@ -440,8 +441,9 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 14000):
+    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000):
         super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
+        self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
 
@@ -472,7 +474,7 @@ class LLMSegmentor(AbstractSegmentor):
                 expected_schema=self.RESULTS_SCHEMA_SEGMENTATION,
                 max_tokens=self.max_new_tokens,
                 temperature=self.temperature,
-                text_limit=28000
+                text_limit=self.text_limit_chars
             )
         except Exception as e:
             self.logger.error(f"LLM segmentation failed: {e}")
@@ -488,7 +490,7 @@ class LLMSegmentor(AbstractSegmentor):
             original_text=text,
             tagged_text=tagged_text,
             min_ratio=0.7,
-            max_dist=200,
+            max_dist=2000,
         )
         # Fix tags just in case, though LLM should be better
         annotations = SpanAligner.get_annotations_from_tagged_text(
@@ -534,4 +536,5 @@ def get_segmentor() -> AbstractSegmentor:
             model_name=seg_config.model_name,
             temperature=seg_config.temperature,
             max_new_tokens=seg_config.max_new_tokens,
+            text_limit_chars=seg_config.text_limit_chars,
         )
