@@ -322,7 +322,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             source_uri=eli_expression_uri,
             start=decision.get('title_start'),
             end=decision.get('title_end'),
-            agent=AI_COMPONENTS["segmenter"],
+            agent=AI_COMPONENTS["content_extraction"],
             agent_type=AGENT_TYPES["ai_component"],
             confidence=1.0
         ).add_to_triplestore_if_not_exists()
