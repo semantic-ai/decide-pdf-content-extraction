@@ -68,12 +68,21 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 "download_urls": [],
             }
 
-        container_uri = bindings[0]["container"]["value"]
+        all_filenames = []
+        all_download_urls = []
+        for binding in bindings:
+            container_uri = binding["container"]["value"]
+            if self._container_has_harvest_collection(container_uri):
+                result = self._fetch_remote_files(container_uri)
+            else:
+                result = self._fetch_local_files(container_uri)
+            all_filenames.extend(result["filenames"])
+            all_download_urls.extend(result["download_urls"])
 
-        if self._container_has_harvest_collection(container_uri):
-            return self._fetch_remote_files(container_uri)
-        else:
-            return self._fetch_local_files(container_uri)
+        return {
+            "filenames": all_filenames,
+            "download_urls": all_download_urls,
+        }
 
     def _container_has_harvest_collection(self, container_uri: str) -> bool:
         """
