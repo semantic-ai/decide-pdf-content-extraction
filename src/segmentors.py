@@ -1,9 +1,11 @@
 import logging
 import re
 import asyncio
+from datetime import datetime
 from abc import ABC, abstractmethod
 from span_aligner import SpanAligner
 from typing import Optional, Any, Type, List, Dict
+from helpers import logger
 
 from .config import get_config
 
@@ -24,7 +26,7 @@ class AbstractSegmentor(ABC):
     """Abstract base class for a segmentation strategy."""
 
     def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logger
         self.api_key = api_key
         self.endpoint = endpoint
         self.model_name = model_name
@@ -466,6 +468,7 @@ class LLMSegmentor(AbstractSegmentor):
         self.logger.info(
             f"Running LLM segmentation with {self.analyzer.deployment}...")
 
+        start_segment = datetime.now()
         try:
             result = await self.analyzer.analyze_single_entry(
                 text=text,
@@ -476,6 +479,7 @@ class LLMSegmentor(AbstractSegmentor):
                 temperature=self.temperature,
                 text_limit=self.text_limit_chars
             )
+            self.logger.info("LLM Segmentation took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
         except Exception as e:
             self.logger.error(f"LLM segmentation failed: {e}")
             return []
@@ -492,11 +496,13 @@ class LLMSegmentor(AbstractSegmentor):
             min_ratio=0.7,
             max_dist=2000,
         )
+        self.logger.info("Tag projection took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
         # Fix tags just in case, though LLM should be better
         annotations = SpanAligner.get_annotations_from_tagged_text(
             mapped_tagged_text,
             span_map=self.LABEL_MAPPING
         )
+        self.logger.info("Fixing tags took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
         return [self.format_segment(span) for span in annotations.get("spans", [])]
 
     def segment(self, text: str) -> List[Dict[str, Any]]:
