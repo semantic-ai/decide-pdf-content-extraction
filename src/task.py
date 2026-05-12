@@ -19,7 +19,7 @@ from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefi
 from decide_ai_service_base.annotation import RelationExtractionAnnotation
 
 from escape_helpers import sparql_escape_uri, sparql_escape_string
-from helpers import query, update
+from helpers import query, update, logger
 
 
 class PdfContentExtractionTask(DecisionTask, ABC):
@@ -232,7 +232,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
                 except Exception as e:
-                    self.logger.exception(
+                    logger.exception(
                         f"Exception during PDF download: {e}")
 
             if os.path.isfile(saved_path):
@@ -257,7 +257,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                         }
                     )
                 except Exception as e:
-                    self.logger.exception(
+                    logger.exception(
                         f"Exception during retrieving content of PDF: {e}")
 
         return results
@@ -516,7 +516,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         """
         input = self.fetch_data_from_input_container()
 
-        segmentor = get_segmentor()
+        segmentor = get_segmentor(self.task_uri)
 
         extraction_results = self.extract_content_from_pdf(input)
         for extraction_result in extraction_results:

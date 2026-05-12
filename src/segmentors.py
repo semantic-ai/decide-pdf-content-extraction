@@ -1,10 +1,14 @@
 import logging
 import re
 import asyncio
+from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from span_aligner import SpanAligner
 from typing import Optional, Any, Type, List, Dict
-
+from helpers import update, logger
+from escape_helpers import sparql_escape_uri, sparql_escape_datetime
+from string import Template
+from decide_ai_service_base.sparql_config import GRAPHS
 from .config import get_config
 
 try:
@@ -16,6 +20,20 @@ except ImportError:
 from .LLMAnalyzer import LLMAnalyzer
 
 
+def log_date(task_uri: str, predicate: str):
+    q = Template("""
+        INSERT DATA {
+            GRAPH $graph {
+                $task $predicate $time .
+            }
+        }
+    """).substitute(
+        graph=GRAPHS["jobs"],
+        task=sparql_escape_uri(task_uri),
+        predicate=sparql_escape_uri(predicate),
+        time=sparql_escape_datetime(datetime.now(timezone.utc))
+    )
+    update(q, sudo=True)
 # ----------------------------------------------
 # Segmentor interface
 # ----------------------------------------------
@@ -23,8 +41,9 @@ from .LLMAnalyzer import LLMAnalyzer
 class AbstractSegmentor(ABC):
     """Abstract base class for a segmentation strategy."""
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000):
-        self.logger = logging.getLogger(self.__class__.__name__)
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000):
+        self.task_uri = task_uri
+        self.logger = logger
         self.api_key = api_key
         self.endpoint = endpoint
         self.model_name = model_name
@@ -68,8 +87,8 @@ SEGMENTS:
 ['TITLE', 'PARTICIPANTS', 'MOTIVATION', 'PREVIOUS_DECISIONS', 'LEGAL_FRAMEWORK', 'DECISION', 'VOTING', 'ARTICLE']
 ```"""
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "wdmuer/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096):
-        super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "wdmuer/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096):
+        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
 
     def get_generator(self):
         """Lazy-load the segmentation model using config settings."""
@@ -441,8 +460,8 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000):
-        super().__init__(api_key, endpoint, model_name, temperature, max_new_tokens)
+    def __init__(self, task_uri:str, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000):
+        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
@@ -466,6 +485,7 @@ class LLMSegmentor(AbstractSegmentor):
         self.logger.info(
             f"Running LLM segmentation with {self.analyzer.deployment}...")
 
+        start_segment = datetime.now()
         try:
             result = await self.analyzer.analyze_single_entry(
                 text=text,
@@ -476,6 +496,8 @@ class LLMSegmentor(AbstractSegmentor):
                 temperature=self.temperature,
                 text_limit=self.text_limit_chars
             )
+            self.logger.info("LLM Segmentation took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
+            log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/segmentationFinishedAt")
         except Exception as e:
             self.logger.error(f"LLM segmentation failed: {e}")
             return []
@@ -492,11 +514,15 @@ class LLMSegmentor(AbstractSegmentor):
             min_ratio=0.7,
             max_dist=2000,
         )
+        self.logger.info("Tag projection took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
+        log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/tagProjectionFinishedAt")
         # Fix tags just in case, though LLM should be better
         annotations = SpanAligner.get_annotations_from_tagged_text(
             mapped_tagged_text,
             span_map=self.LABEL_MAPPING
         )
+        self.logger.info("Fixing tags took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
+        log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/fixingTagsFinishedAt")
         return [self.format_segment(span) for span in annotations.get("spans", [])]
 
     def segment(self, text: str) -> List[Dict[str, Any]]:
@@ -516,13 +542,14 @@ class LLMSegmentor(AbstractSegmentor):
             return asyncio.run(self.async_segment(text))
 
 
-def get_segmentor() -> AbstractSegmentor:
+def get_segmentor(task_uri: str) -> AbstractSegmentor:
     """Create a Segmentor configured from app config."""
     seg_config = get_config().segmentation
     api_key = seg_config.api_key.get_secret_value() if seg_config.api_key else None
 
     if seg_config.model_name == "wdmuer/decide-marked-segmentation":
         return GemmaSegmentor(
+            task_uri=task_uri,
             api_key=api_key,
             endpoint=seg_config.endpoint,
             model_name=seg_config.model_name,
@@ -531,6 +558,7 @@ def get_segmentor() -> AbstractSegmentor:
         )
     else:
         return LLMSegmentor(
+            task_uri=task_uri,
             api_key=api_key,
             endpoint=seg_config.endpoint,
             model_name=seg_config.model_name,
