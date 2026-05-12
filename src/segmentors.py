@@ -28,7 +28,7 @@ def log_date(task_uri: str, predicate: str):
             }
         }
     """).substitute(
-        graph=GRAPHS["jobs"],
+        graph=sparql_escape_uri(GRAPHS["jobs"]),
         task=sparql_escape_uri(task_uri),
         predicate=sparql_escape_uri(predicate),
         time=sparql_escape_datetime(datetime.now(timezone.utc))
