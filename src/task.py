@@ -25,7 +25,7 @@ from helpers import query, update, logger
 class PdfContentExtractionTask(DecisionTask, ABC):
     """
     Task that processes PDFs and extracts their content to generate an ELI manifestation,
-    expression and work, stored in the task's output data container.z
+    expression and work, stored in the task's output data container.
     """
 
     __task_type__ = TASK_OPERATIONS["pdf_content_extraction"]
