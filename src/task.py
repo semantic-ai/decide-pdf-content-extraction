@@ -432,7 +432,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd", "mu", "ext")
             + f"""
             INSERT DATA {{
-            GRAPH <{GRAPHS["manifestations"]}> {{
+            GRAPH $graph {{
                 $manif a eli:Manifestation ;
                     mu:uuid $uuid ;
                     dcterms:created "$now"^^xsd:dateTime ;
@@ -445,6 +445,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             }}
             """
         ).substitute(
+            graph=sparql_escape_uri(GRAPHS["manifestations"]),
             manif=sparql_escape_uri(manifestation_uri),
             uuid=sparql_escape_string(manifestation_uuid),
             byte_size=str(byte_size),
