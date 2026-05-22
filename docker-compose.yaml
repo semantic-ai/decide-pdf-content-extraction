@@ -20,6 +20,7 @@ services:
     networks:
       - decide
     environment:
+      SEGMENTATION__API_KEY: "SECRET"
       MODE: "development"
       LOG_LEVEL: "info"
       MU_SPARQL_ENDPOINT: http://virtuoso:8890/sparql

@@ -6,8 +6,9 @@ This service allows to extract the content from remote or local PDfs. For remote
 
 ```
 pdf-content:
-    image: semanticai/pdf-content-service:0.0.1
+    image: semanticai/pdf-content-service:0.0.2
     environment:
+      SEGMENTATION__API_KEY: "SECRET"
       APACHE_TIKA_URL: "http://apache-tika:9998/tika"
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
       PUBLICATION_GRAPH: http://mu.semte.ch/graphs/public/pdf
@@ -15,6 +16,8 @@ pdf-content:
     volumes:
       - ./data/files:/mnt/share
 ```
+
+
 
 2. Mount the folder data/files in the lblod/app-decide repo as a volume and add the mounted path as the environment variable 'MOUNTED_SHARE_FOLDER'. This is the location where the local PDFs must be stored, whereas the remote PDFs will be saved in the folder 'extract' at that location.
 
