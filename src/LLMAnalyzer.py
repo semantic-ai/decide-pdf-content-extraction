@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import Dict, List, Any, Optional
 import asyncio
 from tqdm import tqdm
@@ -6,6 +7,8 @@ import os
 
 # 1. Update Imports
 from openai import AsyncAzureOpenAI, AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class LLMAnalyzer:
@@ -87,8 +90,10 @@ class LLMAnalyzer:
             return self._validate_result(result, expected_schema)
 
         except Exception as e:
-            print(f"Analysis error: {e}")
-            return self._create_error_result(expected_schema, f"Analysis failed: {str(e)}")
+            logger.exception("LLM analysis failed")
+            raise RuntimeError(
+                f"LLM analysis failed ({self.deployment}): {e}"
+            ) from e
 
     def _validate_result(self, result: Dict[str, Any], expected_schema: Dict[str, Any]) -> Dict[str, Any]:
         """
