@@ -366,59 +366,14 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return title_uri
 
-    def create_manifestation(self, byte_size: int, pdf_url: str) -> str:
+    def create_manifestation(self, byte_size: int, pdf_url: str, skipped: bool = False) -> str:
         """
         Function to create a single ELI manifestation.
 
         Args:
             byte_size: Size of the file in bytes.
             pdf_url: URL to the PDF.
-
-        Returns:
-            The created manifestation URI.
-        """
-        now = datetime.now(timezone.utc).astimezone(
-        ).isoformat(timespec="seconds")
-
-        manifestation_uuid = str(uuid.uuid4())
-        manifestation_uri = f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
-
-        q = Template(
-            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd", "mu")
-            + f"""
-            INSERT DATA {{
-            GRAPH <{GRAPHS["manifestations"]}> {{
-                $manif a eli:Manifestation ;
-                    mu:uuid $uuid ;
-                    dcterms:created "$now"^^xsd:dateTime ;
-                    dcterms:modified "$now"^^xsd:dateTime ;
-                    eli:media_type "application/pdf" ;
-                    epvoc:byteSize $byte_size ;
-                    eli:is_exemplified_by $pdf_url .
-
-            }}
-            }}
-            """
-        ).substitute(
-            manif=sparql_escape_uri(manifestation_uri),
-            uuid=sparql_escape_string(manifestation_uuid),
-            byte_size=str(byte_size),
-            pdf_url=sparql_escape_uri(pdf_url),
-            now=now,
-        )
-
-        update(q, sudo=True)
-
-        return manifestation_uri
-
-    def create_skipped_manifestation(self, byte_size: int, pdf_url: str) -> str:
-        """
-        Create a minimal ELI manifestation for a PDF that was skipped due to
-        exceeding the page limit. Marks it with ext:skippedDueToPageLimit.
-
-        Args:
-            byte_size: Size of the file in bytes.
-            pdf_url: URL to the PDF.
+            skipped: If True, marks the manifestation with ext:skippedDueToPageLimit.
 
         Returns:
             The created manifestation URI.
@@ -428,27 +383,31 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         manifestation_uuid = str(uuid.uuid4())
         manifestation_uri = f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
 
+        prefixes = ["eli", "epvoc", "dcterms", "xsd", "mu"] + (["ext"] if skipped else [])
+        skipped_triple = "ext:skippedDueToPageLimit true ;" if skipped else ""
+
         q = Template(
-            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd", "mu", "ext")
-            + f"""
-            INSERT DATA {{
-            GRAPH $graph {{
+            get_prefixes_for_query(*prefixes)
+            + """
+            INSERT DATA {
+            GRAPH $graph {
                 $manif a eli:Manifestation ;
                     mu:uuid $uuid ;
                     dcterms:created "$now"^^xsd:dateTime ;
                     dcterms:modified "$now"^^xsd:dateTime ;
                     eli:media_type "application/pdf" ;
                     epvoc:byteSize $byte_size ;
-                    eli:is_exemplified_by $pdf_url ;
-                    ext:skippedDueToPageLimit true .
-            }}
-            }}
+                    $skipped_triple
+                    eli:is_exemplified_by $pdf_url .
+                }
+            }
             """
         ).substitute(
             graph=sparql_escape_uri(GRAPHS["manifestations"]),
             manif=sparql_escape_uri(manifestation_uri),
             uuid=sparql_escape_string(manifestation_uuid),
             byte_size=str(byte_size),
+            skipped_triple=skipped_triple,
             pdf_url=sparql_escape_uri(pdf_url),
             now=now,
         )
@@ -595,8 +554,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         extraction_results = self.extract_content_from_pdf(input)
         for extraction_result in extraction_results:
             if extraction_result.get("skipped"):
-                manifestation_uri = self.create_skipped_manifestation(
-                    extraction_result["byte_size"], extraction_result["pdf_url"])
+                manifestation_uri = self.create_manifestation(
+                    extraction_result["byte_size"], extraction_result["pdf_url"], skipped=True)
                 self.results_container_uris.append(
                     self.create_output_container(manifestation_uri))
                 continue
