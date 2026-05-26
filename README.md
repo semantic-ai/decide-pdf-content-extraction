@@ -6,7 +6,7 @@ This service allows to extract the content from remote or local PDfs. For remote
 
 ```
 pdf-content:
-    image: semanticai/pdf-content-service:0.0.2
+    image: semanticai/pdf-content-service:0.0.12
     environment:
       SEGMENTATION__API_KEY: "SECRET"
       APACHE_TIKA_URL: "http://apache-tika:9998/tika"
