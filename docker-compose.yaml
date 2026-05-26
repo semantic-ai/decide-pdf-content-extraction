@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
 
   pdf-content-service:
-    container_name: pdf-content-service
+    container_name: pdf-content
     build:
       context: .
       dockerfile: Dockerfile
@@ -21,10 +21,8 @@ services:
       - decide
     environment:
       SEGMENTATION__API_KEY: "SECRET"
-      MODE: "development"
       LOG_LEVEL: "info"
-      MU_SPARQL_ENDPOINT: http://virtuoso:8890/sparql
-      MU_SPARQL_UPDATEPOINT: http://virtuoso:8890/sparql
+      ALLOW_MU_AUTH_SUDO: true
       APACHE_TIKA_URL: "http://apache_tika:9998/tika"
       EXPECTED_TASK_PREDICATE: "http://www.w3.org/ns/adms#status"
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
