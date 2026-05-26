@@ -7,7 +7,7 @@ import langdetect
 import urllib.request
 
 from string import Template
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
@@ -21,6 +21,8 @@ from decide_ai_service_base.annotation import RelationExtractionAnnotation
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update, logger
 
+PDF_PAGE_LIMIT = 10
+
 
 class PdfContentExtractionTask(DecisionTask, ABC):
     """
@@ -31,10 +33,15 @@ class PdfContentExtractionTask(DecisionTask, ABC):
     __task_type__ = TASK_OPERATIONS["pdf_content_extraction"]
 
     class PdfExtractionResult(TypedDict):
-        content: str
         pdf_url: str
         byte_size: int
         filename: str
+
+    class NormalPdfResult(PdfExtractionResult):
+        content: str
+
+    class SkippedPdfResult(PdfExtractionResult):
+        skipped: bool
 
     def __init__(self, task_uri: str):
         super().__init__(task_uri)
@@ -184,7 +191,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             "download_urls": [b["shareIri"]["value"] for b in bindings],
         }
 
-    def extract_content_from_pdf(self, input: dict[str, list[str]]) -> list[PdfExtractionResult]:
+    def extract_content_from_pdf(self, input: dict[str, list[str]]) -> list[NormalPdfResult | SkippedPdfResult]:
         """
         Download the PDFs and extract their content using Apache Tika.
 
@@ -238,6 +245,27 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             if os.path.isfile(saved_path):
                 try:
                     byte_size = os.path.getsize(saved_path)
+                    tika_meta_url = urljoin(os.environ["APACHE_TIKA_URL"], "/meta")
+
+                    with open(saved_path, "rb") as f:
+                        meta_response = requests.put(
+                            tika_meta_url,
+                            data=f,
+                            headers={"Accept": "application/json"},
+                        )
+                        meta_response.raise_for_status()
+                        page_count = int(meta_response.json().get("xmpTPg:NPages", 0))
+
+                    if page_count > PDF_PAGE_LIMIT:
+                        results.append(
+                            {
+                                "skipped": True,
+                                "pdf_url": download_url,
+                                "byte_size": byte_size,
+                                "filename": saved_path,
+                            }
+                        )
+                        continue
 
                     with open(saved_path, "rb") as f:
                         response = requests.put(
@@ -338,43 +366,48 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return title_uri
 
-    def create_manifestation(self, byte_size: int, pdf_url: str) -> str:
+    def create_manifestation(self, byte_size: int, pdf_url: str, skipped: bool = False) -> str:
         """
         Function to create a single ELI manifestation.
 
         Args:
             byte_size: Size of the file in bytes.
             pdf_url: URL to the PDF.
+            skipped: If True, marks the manifestation with ext:skippedDueToPageLimit.
 
         Returns:
             The created manifestation URI.
         """
-        now = datetime.now(timezone.utc).astimezone(
-        ).isoformat(timespec="seconds")
+        now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
         manifestation_uuid = str(uuid.uuid4())
         manifestation_uri = f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
 
+        prefixes = ["eli", "epvoc", "dcterms", "xsd", "mu"] + (["ext"] if skipped else [])
+        skipped_triple = "ext:skippedDueToPageLimit true ;" if skipped else ""
+
         q = Template(
-            get_prefixes_for_query("eli", "epvoc", "dcterms", "xsd", "mu")
-            + f"""
-            INSERT DATA {{
-            GRAPH <{GRAPHS["manifestations"]}> {{
+            get_prefixes_for_query(*prefixes)
+            + """
+            INSERT DATA {
+            GRAPH $graph {
                 $manif a eli:Manifestation ;
                     mu:uuid $uuid ;
                     dcterms:created "$now"^^xsd:dateTime ;
                     dcterms:modified "$now"^^xsd:dateTime ;
                     eli:media_type "application/pdf" ;
                     epvoc:byteSize $byte_size ;
+                    $skipped_triple
                     eli:is_exemplified_by $pdf_url .
-
-            }}
-            }}
+                }
+            }
             """
         ).substitute(
+            graph=sparql_escape_uri(GRAPHS["manifestations"]),
             manif=sparql_escape_uri(manifestation_uri),
             uuid=sparql_escape_string(manifestation_uuid),
             byte_size=str(byte_size),
+            skipped_triple=skipped_triple,
             pdf_url=sparql_escape_uri(pdf_url),
             now=now,
         )
@@ -520,6 +553,13 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         extraction_results = self.extract_content_from_pdf(input)
         for extraction_result in extraction_results:
+            if extraction_result.get("skipped"):
+                manifestation_uri = self.create_manifestation(
+                    extraction_result["byte_size"], extraction_result["pdf_url"], skipped=True)
+                self.results_container_uris.append(
+                    self.create_output_container(manifestation_uri))
+                continue
+
             language = langdetect.detect(extraction_result["content"])
             decisions = self.split_decisions(
                 extraction_result["content"], segmentor)
@@ -531,10 +571,10 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 work_uuid = str(uuid.uuid4())
                 work_uri = self.create_eli_work(expression_uuid, work_uuid)
                 expression_uri = self.create_eli_expression(
-                    decision, language, manifestation_uri, expression_uuid, work_uri)                
+                    decision, language, manifestation_uri, expression_uuid, work_uri)
                 title_uri = self.create_title_annotation(decision,
-                                                         language,
-                                                         expression_uri)
+                                                          language,
+                                                          expression_uri)
 
                 self.results_container_uris.append(
                     self.create_output_container(expression_uri))
