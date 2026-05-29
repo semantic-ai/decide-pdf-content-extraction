@@ -137,7 +137,7 @@ def get_config() -> AppConfig:
         AppConfig instance
     """
     if _config is None:
-        return load_config()
+        return load_config(AppConfig)
     return _config
 
 
