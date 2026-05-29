@@ -29,9 +29,11 @@ services:
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
       PUBLICATION_GRAPH: http://mu.semte.ch/graphs/publication
       MOUNTED_SHARE_FOLDER: "/mnt/share"
+      CONFIG_PATH: /app/config.json
     volumes:
       - ./:/app
       - ./../app-decide/data/files:/mnt/share
+      - ./config.json:/app/config.json:ro # Mount config as read-only
 
 networks:
   decide:
