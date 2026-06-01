@@ -1,6 +1,5 @@
 import os
 import uuid
-import logging
 import requests
 import contextlib
 import langdetect

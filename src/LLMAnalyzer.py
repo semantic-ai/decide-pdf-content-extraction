@@ -1,14 +1,11 @@
 import json
-import logging
 from typing import Dict, List, Any, Optional
 import asyncio
 from tqdm import tqdm
 import os
-
+from helpers import logger
 # 1. Update Imports
 from openai import AsyncAzureOpenAI, AsyncOpenAI
-
-logger = logging.getLogger(__name__)
 
 
 class LLMAnalyzer:
