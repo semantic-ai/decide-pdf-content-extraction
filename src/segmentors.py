@@ -460,7 +460,7 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, task_uri:str, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000):
+    def __init__(self, task_uri:str, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, max_retries: int = 3, retry_delay: float = 15.0):
         super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
@@ -469,7 +469,9 @@ class LLMSegmentor(AbstractSegmentor):
         self.analyzer = LLMAnalyzer(
             api_key=self.api_key,
             endpoint=self.endpoint,
-            deployment=self.model_name
+            deployment=self.model_name,
+            max_retries=max_retries,
+            retry_delay=retry_delay
         )
 
     def format_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
@@ -565,4 +567,6 @@ def get_segmentor(task_uri: str) -> AbstractSegmentor:
             temperature=seg_config.temperature,
             max_new_tokens=seg_config.max_new_tokens,
             text_limit_chars=seg_config.text_limit_chars,
+            max_retries=seg_config.max_retries,
+            retry_delay=seg_config.retry_delay,
         )

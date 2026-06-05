@@ -7,6 +7,8 @@ import os
 # 1. Update Imports
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
+from .retry import aretry_call
+
 
 class LLMAnalyzer:
     """
@@ -17,12 +19,16 @@ class LLMAnalyzer:
                  api_key: Optional[str] = None,
                  endpoint: Optional[str] = None,
                  deployment: str = "gpt-4.1-nano",
-                 api_version: str = "2024-10-21"):
+                 api_version: str = "2024-10-21",
+                 max_retries: int = 3,
+                 retry_delay: float = 15.0):
         """
         Initialize the analyzer. Auto-detects provider based on endpoint URL.
         """
         self.deployment = deployment
         self.api_version = api_version
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
 
         # 2. Flexible Configuration
         # If no key provided for local, use dummy "ollama"
@@ -36,14 +42,16 @@ class LLMAnalyzer:
             self.client = AsyncAzureOpenAI(
                 api_key=self.api_key,
                 api_version=self.api_version,
-                azure_endpoint=self.endpoint
+                azure_endpoint=self.endpoint,
+                max_retries=0,
             )
         else:
             print(
                 f"Connecting to Local/OpenAI/Minstral via Openai API: {self.deployment}")
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
-                base_url=self.endpoint
+                base_url=self.endpoint,
+                max_retries=0,
             )
 
     async def analyze_single_entry(self,
@@ -78,7 +86,7 @@ class LLMAnalyzer:
                 completion_args["max_tokens"] = max_tokens
                 completion_args["temperature"] = temperature
 
-            response = await self.client.chat.completions.create(**completion_args)
+            response = await aretry_call(self.client.chat.completions.create,max_retries=self._max_retries,retry_delay=self._retry_delay,**completion_args)
 
             # ... [Rest of your existing parsing logic remains exactly the same] ...
             result_text = response.choices[0].message.content
