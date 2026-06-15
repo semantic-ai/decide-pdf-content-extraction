@@ -9,8 +9,8 @@ Classes:
 - SpacyExtractor, FlairExtractor, etc.: Factory pattern implementations
 """
 import json
-import logging
 from typing import List, Dict, Any
+from helpers import logger
 from .ner_models import model_manager
 from .ner_config import TITLE_EXTRACTION_INSTRUCTION, NER_MODELS, LABEL_MAPPINGS
 from .config import get_config
@@ -202,5 +202,5 @@ class TitleExtractor(BaseExtractor):
             return []
 
         except Exception as e:
-            logging.warning(f"Error in title extraction: {e}")
+            logger.warning(f"Error in title extraction: {e}")
             return []

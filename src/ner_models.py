@@ -4,13 +4,11 @@ NER Model Management
 This module handles loading and caching of NER models with lazy initialization.
 """
 
-import logging
 from typing import Dict, Any
 from transformers import pipeline
 from .ner_config import NER_MODELS
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
-logger = logging.getLogger(__name__)
+from helpers import logger
 
 
 class ModelManager:

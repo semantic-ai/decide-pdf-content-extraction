@@ -1,6 +1,5 @@
 import os
 import uuid
-import logging
 import requests
 import contextlib
 import langdetect
@@ -13,10 +12,12 @@ from datetime import datetime, timezone
 from typing import Optional, Type, TypedDict
 
 from .segmentors import AbstractSegmentor, get_segmentor
+from .helper_functions import fail_if_no_successes
 
 from decide_ai_service_base.task import DecisionTask
 from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AI_COMPONENTS, AGENT_TYPES, SPARQL_PREFIXES
 from decide_ai_service_base.annotation import RelationExtractionAnnotation
+from decide_ai_service_base.util import write_error_log
 
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update, logger
@@ -210,6 +211,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 - filename: local filename used to save the PDF
         """
         results = []
+        errors: list[str] = []
+        total = len(input["filenames"])
 
         for filename, download_url in zip(input["filenames"], input["download_urls"]):
             parsed = urlparse(download_url)
@@ -240,7 +243,10 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                             f.write(chunk)
                 except Exception as e:
                     logger.exception(
-                        f"Exception during PDF download: {e}")
+                        f"PDF download failed for {download_url}")
+                    errors.append(
+                        f"download {download_url}: {type(e).__name__}: {e}")
+                    continue
 
             if os.path.isfile(saved_path):
                 try:
@@ -286,8 +292,16 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     )
                 except Exception as e:
                     logger.exception(
-                        f"Exception during retrieving content of PDF: {e}")
+                        f"Tika extraction failed for {saved_path}")
+                    errors.append(
+                        f"tika {download_url}: {type(e).__name__}: {e}")
 
+        fail_if_no_successes(
+            label="PDF extraction",
+            total=total,
+            successes=len(results),
+            errors=errors,
+        )
         return results
 
     def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str, expression_uuid: str, work_uri: str) -> str:
@@ -552,36 +566,62 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         segmentor = get_segmentor(self.task_uri)
 
         extraction_results = self.extract_content_from_pdf(input)
+
+        errors: list[str] = []
+        successes = 0
+        total = len(extraction_results)
+
         for extraction_result in extraction_results:
-            if extraction_result.get("skipped"):
+            pdf_url = extraction_result["pdf_url"]
+            try:
+                try:
+                    language = langdetect.detect(extraction_result["content"])
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Language detection failed (content length="
+                        f"{len(extraction_result['content'])}): {e}"
+                    ) from e
+
+                decisions = self.split_decisions(
+                    extraction_result["content"], segmentor)
+
                 manifestation_uri = self.create_manifestation(
-                    extraction_result["byte_size"], extraction_result["pdf_url"], skipped=True)
+                    extraction_result["byte_size"], pdf_url)
+                for decision in decisions:
+                    expression_uuid = str(uuid.uuid4())
+                    work_uuid = str(uuid.uuid4())
+                    work_uri = self.create_eli_work(expression_uuid, work_uuid)
+                    expression_uri = self.create_eli_expression(
+                        decision, language, manifestation_uri, expression_uuid, work_uri)
+                    title_uri = self.create_title_annotation(decision,
+                                                             language,
+                                                             expression_uri)
+
+                    self.results_container_uris.append(
+                        self.create_output_container(expression_uri))
+                    self.results_container_uris.append(
+                        self.create_output_container(work_uri))
+                    self.results_container_uris.append(
+                        self.create_output_container(title_uri))
+
                 self.results_container_uris.append(
                     self.create_output_container(manifestation_uri))
-                continue
+                successes += 1
+            except Exception as e:
+                logger.exception(f"Processing PDF {pdf_url} failed")
+                error_msg = f"PDF {pdf_url} failed: {type(e).__name__}: {e}"
+                errors.append(error_msg)
+                # Persist per-PDF error to triplestore so the frontend can see
+                # which specific PDF failed and why, even when the task as a whole succeeds
+                try:
+                    write_error_log(self.task_uri, error_msg)
+                except Exception:
+                    logger.exception(
+                        f"Could not persist per-PDF error for {pdf_url}")
 
-            language = langdetect.detect(extraction_result["content"])
-            decisions = self.split_decisions(
-                extraction_result["content"], segmentor)
-
-            manifestation_uri = self.create_manifestation(
-                extraction_result["byte_size"], extraction_result["pdf_url"])
-            for decision in decisions:
-                expression_uuid = str(uuid.uuid4())
-                work_uuid = str(uuid.uuid4())
-                work_uri = self.create_eli_work(expression_uuid, work_uuid)
-                expression_uri = self.create_eli_expression(
-                    decision, language, manifestation_uri, expression_uuid, work_uri)
-                title_uri = self.create_title_annotation(decision,
-                                                          language,
-                                                          expression_uri)
-
-                self.results_container_uris.append(
-                    self.create_output_container(expression_uri))
-                self.results_container_uris.append(
-                    self.create_output_container(work_uri))
-                self.results_container_uris.append(
-                    self.create_output_container(title_uri))
-
-            self.results_container_uris.append(
-                self.create_output_container(manifestation_uri))
+        fail_if_no_successes(
+            label="PDF processing",
+            total=total,
+            successes=successes,
+            errors=errors,
+        )

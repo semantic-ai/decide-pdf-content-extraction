@@ -1,4 +1,3 @@
-import logging
 import re
 import asyncio
 from datetime import datetime, timezone
@@ -501,8 +500,10 @@ class LLMSegmentor(AbstractSegmentor):
             self.logger.info("LLM Segmentation took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
             log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/segmentationFinishedAt")
         except Exception as e:
-            self.logger.error(f"LLM segmentation failed: {e}")
-            return []
+            self.logger.exception("LLM segmentation failed")
+            raise RuntimeError(
+                f"LLM segmentation failed ({self.analyzer.deployment}): {e}"
+            ) from e
 
         tagged_text = result.get("tagged_text", "")
         if not tagged_text:
