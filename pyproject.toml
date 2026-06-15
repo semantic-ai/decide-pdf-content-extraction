@@ -1,0 +1,6 @@
+[project]
+name = "decide-pdf-content-extraction"
+version = "0.0.12"
+description = "AI services for extracting structured content from PDFs, using LLMs for segmentation and NER."
+requires-python = ">=3.12"
+readme = "README.md"

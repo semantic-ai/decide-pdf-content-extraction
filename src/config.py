@@ -9,8 +9,9 @@ future settings beyond NER.
 import json
 from pathlib import Path
 from typing import Literal
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator, ConfigDict, ValidationError
-
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from decide_ai_service_base.config import load_config
 
 class NerConfig(BaseModel):
     """NER (Named Entity Recognition) configuration settings."""
@@ -100,11 +101,14 @@ class AppSettingsConfig(BaseModel):
         return v.strip().lower() if isinstance(v, str) else v
 
 
-class AppConfig(BaseModel):
+class AppConfig(BaseSettings):
     """Root application configuration model."""
 
-    # Reject extra fields not defined in the model
-    model_config = ConfigDict(extra="forbid")
+    model_config = SettingsConfigDict(
+        extra="forbid", # Reject extra fields not defined in the model
+        env_nested_delimiter="__",  # allows SEGMENTATION__LLM__API_KEY etc.
+        env_ignore_empty=True,      # treat empty string env vars as unset
+    )
 
     app: AppSettingsConfig = Field(
         default_factory=AppSettingsConfig,
@@ -123,64 +127,6 @@ class AppConfig(BaseModel):
 # Global config instance (lazy-loaded)
 _config: AppConfig | None = None
 
-
-def load_config(config_path: str | Path | None = None) -> AppConfig:
-    """
-    Load and validate configuration from config.json.
-
-    Args:
-        config_path: Path to config.json file. If None, searches for config.json
-                    in the project root (parent of src/ directory).
-
-    Returns:
-        Validated AppConfig instance
-
-    Raises:
-        FileNotFoundError: If config.json is not found
-        json.JSONDecodeError: If config.json contains invalid JSON
-        ValidationError: If configuration doesn't match the Pydantic model
-    """
-    global _config
-
-    # Return cached config if already loaded
-    if _config is not None:
-        return _config
-
-    # Determine config file path
-    if config_path is None:
-        src_dir = Path(__file__).resolve().parent
-        project_root = src_dir.parent
-        config_path = project_root / "config.json"
-    else:
-        config_path = Path(config_path).resolve()
-
-    # Check if file exists
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Configuration file not found at {config_path}. "
-            f"Please create config.json at the project root."
-        )
-
-    # Read and parse JSON
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = json.load(f)
-    except json.JSONDecodeError as e:
-        raise ValueError(
-            f"Invalid JSON in config file {config_path}: {e}"
-        ) from e
-
-    # Validate with Pydantic
-    try:
-        _config = AppConfig.model_validate(config_data)
-    except ValidationError as e:
-        raise ValueError(
-            f"Configuration validation failed for {config_path}:\n{e}"
-        ) from e
-
-    return _config
-
-
 def get_config() -> AppConfig:
     """
     Get the current configuration instance.
@@ -191,7 +137,7 @@ def get_config() -> AppConfig:
         AppConfig instance
     """
     if _config is None:
-        return load_config()
+        return load_config(AppConfig)
     return _config
 
 
