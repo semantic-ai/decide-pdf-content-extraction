@@ -70,6 +70,16 @@ class SegmentationConfig(BaseModel):
         le=2.0,
         description="Generation temperature (lower = more deterministic)"
     )
+    max_retries: int = Field(
+        default=3,
+        ge=1,
+        description="Max attempts on LLM call failure"
+    )
+    retry_delay: float = Field(
+        default=15.0,
+        ge=0,
+        description="Seconds to sleep between retries"
+    )
 
     @model_validator(mode="after")
     def max_new_tokens_exceeds_text_limit(self) -> "SegmentationConfig":
