@@ -502,9 +502,13 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         Determine whether the extracted PDF content should be split into
         multiple decisions (one ELI Expression per decision title).
 
-        Reads the ext:splitDecisions flag from the task, falling back to the
-        job the task is part of (dct:isPartOf). Defaults to True (split) when
-        the flag is absent or unreadable.
+        Reads the ext:splitDecisions flag with most-specific-wins precedence:
+          1. the task itself,
+          2. the job the task is part of (dct:isPartOf) - one-off jobs,
+          3. the scheduled-job that created the job (dct:creator) - recurring
+             pipelines, since the controllers do not copy custom predicates
+             onto the materialised job/task but do link back via dct:creator.
+        Defaults to True (split) when the flag is absent or unreadable.
 
         Returns:
             True if the content should be split per decision title, False to
@@ -519,10 +523,14 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 OPTIONAL { ?t ext:splitDecisions ?taskSplit . }
                 OPTIONAL {
                   ?t dct:isPartOf ?job .
-                  ?job ext:splitDecisions ?jobSplit .
+                  OPTIONAL { ?job ext:splitDecisions ?jobSplit . }
+                  OPTIONAL {
+                    ?job dct:creator ?scheduledJob .
+                    ?scheduledJob ext:splitDecisions ?scheduledSplit .
+                  }
                 }
               }
-              BIND(COALESCE(?taskSplit, ?jobSplit) AS ?split)
+              BIND(COALESCE(?taskSplit, ?jobSplit, ?scheduledSplit) AS ?split)
             }
             LIMIT 1
             """
