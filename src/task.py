@@ -15,10 +15,9 @@ from .segmentors import AbstractSegmentor, get_segmentor
 from .helper_functions import fail_if_no_successes
 
 from decide_ai_service_base.task import DecisionTask
-from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AI_COMPONENTS, AGENT_TYPES, SPARQL_PREFIXES
+from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AGENT_TYPES, SPARQL_PREFIXES
 from decide_ai_service_base.annotation import RelationExtractionAnnotation
-from decide_ai_service_base.util import write_error_log
-
+from decide_ai_service_base.util import write_error_log, get_agent_uri
 from escape_helpers import sparql_escape_uri, sparql_escape_string
 from helpers import query, update, logger
 
@@ -373,7 +372,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             source_uri=eli_expression_uri,
             start=decision.get('title_start'),
             end=decision.get('title_end'),
-            agent=AI_COMPONENTS["content_extraction"],
+            agent=get_agent_uri(),
             agent_type=AGENT_TYPES["ai_component"],
             confidence=1.0
         ).add_to_triplestore_if_not_exists()

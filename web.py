@@ -1,8 +1,7 @@
 from threading import Lock
 from src.job import fail_busy_and_scheduled_tasks
 from decide_ai_service_base.task import Task
-from src.task import PdfContentExtractionTask
-from decide_ai_service_base.util import fail_busy_and_scheduled_tasks, TaskProcessor, process_open_tasks, wait_for_triplestore
+from decide_ai_service_base.util import fail_busy_and_scheduled_tasks, TaskProcessor, process_open_tasks, wait_for_triplestore, write_agent_info
 from decide_ai_service_base.schema import NotificationResponse, TaskOperationsResponse
 from decide_ai_service_base.task import Task
 
@@ -15,6 +14,7 @@ async def startup_event():
     wait_for_triplestore()
     # on startup fail existing busy tasks
     fail_busy_and_scheduled_tasks()
+    write_agent_info("http://lblod.data.gift/id/components/pdf-to-eli/v1.0.0")
     # on startup also immediately start scheduled tasks
     process_open_tasks(_open_tasks_lock)
 
