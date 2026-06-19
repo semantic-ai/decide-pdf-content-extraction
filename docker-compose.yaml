@@ -1,24 +1,17 @@
 services:
-  apache_tika:
-    container_name: apache_tika
-    build:
-      context: ./../apache-tika-service
-      dockerfile: Dockerfile
-    ports:
-      - "9998:9998"
-    networks:
-      - decide
-    restart: unless-stopped
-
-  pdf-content-service:
-    container_name: pdf-content
+  pdf-content:
     build:
       context: .
       dockerfile: Dockerfile
+    command: >
+      uv run python -m debugpy --listen 0.0.0.0:5678 -m uvicorn web:app --host
+      0.0.0.0 --port 80 --proxy-headers --timeout-keep-alive 300 --workers 1
+      --reload --reload-dir /app
     ports:
       - "8081:80"
+      - "5678:5678"
     networks:
-      - decide
+      - app-decide_default
     environment:
       SEGMENTATION__API_KEY: "SECRET"
       LOG_LEVEL: "info"
@@ -36,5 +29,5 @@ services:
       - ./config.json:/app/config.json:ro # Mount config as read-only
 
 networks:
-  decide:
+  app-decide_default:
     external: true
