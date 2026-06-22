@@ -497,13 +497,72 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         update(q, sudo=True)
         return container_uri
 
-    def split_decisions(self, text: str, segmentor: AbstractSegmentor) -> list[dict[str, str]]:
+    def should_split_decisions(self) -> bool:
+        """
+        Determine whether the extracted PDF content should be split into
+        multiple decisions (one ELI Expression per decision title).
+
+        Reads the ext:splitDecisions flag with most-specific-wins precedence:
+          1. the task itself,
+          2. the job the task is part of (dct:isPartOf) - one-off jobs,
+          3. the scheduled-job that created the job (dct:creator) - recurring
+             pipelines, since the controllers do not copy custom predicates
+             onto the materialised job/task but do link back via dct:creator.
+        Defaults to True (split) when the flag is absent or unreadable.
+
+        Returns:
+            True if the content should be split per decision title, False to
+            produce a single ELI Expression for the whole document.
+        """
+        q = Template(
+            get_prefixes_for_query("ext", "dct") +
+            """
+            SELECT ?split WHERE {
+              GRAPH $graph {
+                VALUES ?t { $task }
+                OPTIONAL { ?t ext:splitDecisions ?taskSplit . }
+                OPTIONAL {
+                  ?t dct:isPartOf ?job .
+                  OPTIONAL { ?job ext:splitDecisions ?jobSplit . }
+                  OPTIONAL {
+                    ?job dct:creator ?scheduledJob .
+                    ?scheduledJob ext:splitDecisions ?scheduledSplit .
+                  }
+                }
+              }
+              BIND(COALESCE(?taskSplit, ?jobSplit, ?scheduledSplit) AS ?split)
+            }
+            LIMIT 1
+            """
+        ).substitute(
+            graph=sparql_escape_uri(GRAPHS["jobs"]),
+            task=sparql_escape_uri(self.task_uri),
+        )
+
+        try:
+            bindings = query(q, sudo=True).get(
+                "results", {}).get("bindings", [])
+        except Exception:
+            logger.exception(
+                f"Could not read ext:splitDecisions for task {self.task_uri}; "
+                f"defaulting to splitting enabled")
+            return True
+
+        if not bindings or "split" not in bindings[0]:
+            return True
+
+        # mu-cl-resources stores xsd:boolean as the literal "true"/"false"
+        value = bindings[0]["split"]["value"].strip().lower()
+        return value not in ("false", "0")
+
+    def split_decisions(self, text: str, segmentor: AbstractSegmentor, split_enabled: bool = True) -> list[dict[str, str]]:
         """
         Split the extracted text into individual decisions.
 
         Args:
             text: The full text extracted from the PDF.
-            extractor: An instance of TitleExtractor to extract titles from the text.
+            segmentor: A segmentor used to find decision titles in the text.
+            split_enabled: When False, the whole document is kept as a single decision regardless of how many titles are found.
         Returns:
             A list of dictionaries, each representing an individual decision
             with "text", "title", "title_start", and "title_end" keys.
@@ -521,11 +580,13 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                      "title_start": None,
                      "title_end": None}]
 
-        elif len(decision_titles) == 1:
+        elif not split_enabled or len(decision_titles) == 1:
+            # Use the first title as that decision's title.
+            first_title = min(decision_titles, key=lambda s: s["start"])
             return [{"text": text,
-                     "title": decision_titles[0]["text"],
-                     "title_start": decision_titles[0]["start"],
-                     "title_end": decision_titles[0]["end"]}]
+                     "title": first_title["text"],
+                     "title_start": first_title["start"],
+                     "title_end": first_title["end"]}]
         else:
             decision_titles_sorted = sorted(
                 decision_titles, key=lambda s: s["start"])
@@ -563,6 +624,10 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         input = self.fetch_data_from_input_container()
 
         segmentor = get_segmentor(self.task_uri)
+        split_enabled = self.should_split_decisions()
+        logger.info(
+            f"Decision splitting {'enabled' if split_enabled else 'disabled'} "
+            f"for task {self.task_uri}")
 
         extraction_results = self.extract_content_from_pdf(input)
 
@@ -582,7 +647,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     ) from e
 
                 decisions = self.split_decisions(
-                    extraction_result["content"], segmentor)
+                    extraction_result["content"], segmentor, split_enabled)
 
                 manifestation_uri = self.create_manifestation(
                     extraction_result["byte_size"], pdf_url)
