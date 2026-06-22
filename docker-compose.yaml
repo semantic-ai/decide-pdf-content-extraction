@@ -4,8 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     command: >
-      uv run python -m debugpy --listen 0.0.0.0:5678 -m uvicorn web:app --host
-      0.0.0.0 --port 80 --proxy-headers --timeout-keep-alive 300 --workers 1
+      uv run python -m debugpy --wait-for-client --listen 0.0.0.0:5678 -m uvicorn web:app --host
+      0.0.0.0 --port 80 --proxy-headers --timeout-keep-alive 300 --workers 1 
       --reload --reload-dir /app
     ports:
       - "8081:80"
@@ -19,10 +19,22 @@ services:
       APACHE_TIKA_URL: "http://apache_tika:9998/tika"
       EXPECTED_TASK_PREDICATE: "http://www.w3.org/ns/adms#status"
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
-      TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
-      PUBLICATION_GRAPH: http://mu.semte.ch/graphs/publication
       MOUNTED_SHARE_FOLDER: "/mnt/share"
       CONFIG_PATH: /app/config.json
+      TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
+      JOB_GRAPH: http://mu.semte.ch/graphs/harvesting
+      DATA_CONTAINER_GRAPH: http://mu.semte.ch/graphs/harvesting
+      HARVEST_COLLECTIONS_GRAPH: http://mu.semte.ch/graphs/harvesting
+      REMOTE_OBJECT_GRAPH: http://mu.semte.ch/graphs/harvesting
+      FILES_GRAPH: http://mu.semte.ch/graphs/harvesting
+      OPARL_TEMP_GRAPH: http://mu.semte.ch/graphs/harvesting
+      OSLO_TEMP_GRAPH: http://mu.semte.ch/graphs/harvesting
+
+      PUBLICATION_GRAPH: http://mu.semte.ch/graphs/public/pdf
+      EXPRESSIONS_GRAPH: http://mu.semte.ch/graphs/public/pdf
+      WORKS_GRAPH: http://mu.semte.ch/graphs/public/pdf
+      MANIFESTATIONS_GRAPH: http://mu.semte.ch/graphs/public/pdf
+      AI_GRAPH: http://mu.semte.ch/graphs/public/pdf
       FORCE_VERSIONED_AGENT_URI: true
       CONFIGURED_AGENT_URI: http://lblod.data.gift/id/components/pdf-to-eli/decide/commit/92a6988130508c49c87b20d10bdd06bf188162b5
       CONFIG_REPO_URL: https://github.com/lblod/app-decide/commit/92a6988130508c49c87b20d10bdd06bf188162b5

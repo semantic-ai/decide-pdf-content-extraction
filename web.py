@@ -6,6 +6,7 @@ from decide_ai_service_base.schema import NotificationResponse, TaskOperationsRe
 from decide_ai_service_base.task import Task
 
 from fastapi import APIRouter, BackgroundTasks
+from src.task import PdfContentExtractionTask # import needed to register the task as a subclass, so the operation is found
 
 _open_tasks_lock = Lock()
 
