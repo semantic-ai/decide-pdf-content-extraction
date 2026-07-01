@@ -1,5 +1,4 @@
 import re
-import asyncio
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from span_aligner import SpanAligner
@@ -459,18 +458,20 @@ class LLMSegmentor(AbstractSegmentor):
         "document_classification": {"default": "", "type": str}
     }
 
-    def __init__(self, task_uri:str, api_key: str = None, endpoint: str = None, model_name: str = "gpt-4.1", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, max_retries: int = 3, retry_delay: float = 15.0):
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "mistral-large-latest", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, provider: str = "mistralai", max_retries: int = 3, retry_delay: float = 15.0):
         super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
 
         self.analyzer = LLMAnalyzer(
+            provider=provider,
+            model_name=self.model_name,
             api_key=self.api_key,
-            endpoint=self.endpoint,
-            deployment=self.model_name,
+            base_url=self.endpoint,
+            temperature=self.temperature,
             max_retries=max_retries,
-            retry_delay=retry_delay
+            retry_delay=retry_delay,
         )
 
     def format_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
@@ -482,27 +483,25 @@ class LLMSegmentor(AbstractSegmentor):
             "text": segment.get("text", "")
         }
 
-    async def async_segment(self, text: str) -> List[Dict[str, Any]]:
+    def segment(self, text: str) -> List[Dict[str, Any]]:
         self.logger.info(
-            f"Running LLM segmentation with {self.analyzer.deployment}...")
+            f"Running LLM segmentation with {self.analyzer.model_name}...")
 
         start_segment = datetime.now()
         try:
-            result = await self.analyzer.analyze_single_entry(
+            result = self.analyzer.analyze_single_entry(
                 text=text,
                 system_prompt=self.SYSTEM_PROMPT_REFERENCES_SEGMENTATION,
                 user_prompt_template=self.USER_PROMPT_TEMPLATE_REFERENCES_SEGMENTATION,
                 expected_schema=self.RESULTS_SCHEMA_SEGMENTATION,
-                max_tokens=self.max_new_tokens,
-                temperature=self.temperature,
-                text_limit=self.text_limit_chars
+                text_limit=self.text_limit_chars,
             )
             self.logger.info("LLM Segmentation took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
             log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/segmentationFinishedAt")
         except Exception as e:
             self.logger.exception("LLM segmentation failed")
             raise RuntimeError(
-                f"LLM segmentation failed ({self.analyzer.deployment}): {e}"
+                f"LLM segmentation failed ({self.analyzer.model_name}): {e}"
             ) from e
 
         tagged_text = result.get("tagged_text", "")
@@ -510,7 +509,6 @@ class LLMSegmentor(AbstractSegmentor):
             self.logger.warning("LLM returned empty tagged text.")
             return []
 
-        # Project the tags onto the original text
         mapped_tagged_text = SpanAligner.map_tags_to_original(
             original_text=text,
             tagged_text=tagged_text,
@@ -519,7 +517,7 @@ class LLMSegmentor(AbstractSegmentor):
         )
         self.logger.info("Tag projection took {0} seconds".format((datetime.now() - start_segment).total_seconds()))
         log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/tagProjectionFinishedAt")
-        # Fix tags just in case, though LLM should be better
+
         annotations = SpanAligner.get_annotations_from_tagged_text(
             mapped_tagged_text,
             span_map=self.LABEL_MAPPING
@@ -528,46 +526,31 @@ class LLMSegmentor(AbstractSegmentor):
         log_date(self.task_uri, "http://mu.semte.ch/vocabularies/ext/fixingTagsFinishedAt")
         return [self.format_segment(span) for span in annotations.get("spans", [])]
 
-    def segment(self, text: str) -> List[Dict[str, Any]]:
-        # Check for existing event loop
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            # If in a running loop (e.g., Jupyter), run in a separate thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(asyncio.run, self.async_segment(text))
-                return future.result()
-        else:
-            return asyncio.run(self.async_segment(text))
-
 
 def get_segmentor(task_uri: str) -> AbstractSegmentor:
     """Create a Segmentor configured from app config."""
     seg_config = get_config().segmentation
-    api_key = seg_config.api_key.get_secret_value() if seg_config.api_key else None
+    api_key = seg_config.llm.api_key.get_secret_value() if seg_config.llm.api_key else None
 
-    if seg_config.model_name == "wdmuer/decide-marked-segmentation":
+    if seg_config.llm.model_name == "wdmuer/decide-marked-segmentation":
         return GemmaSegmentor(
             task_uri=task_uri,
             api_key=api_key,
-            endpoint=seg_config.endpoint,
-            model_name=seg_config.model_name,
-            temperature=seg_config.temperature,
+            endpoint=seg_config.llm.base_url,
+            model_name=seg_config.llm.model_name,
+            temperature=seg_config.llm.temperature,
             max_new_tokens=seg_config.max_new_tokens,
         )
     else:
         return LLMSegmentor(
             task_uri=task_uri,
             api_key=api_key,
-            endpoint=seg_config.endpoint,
-            model_name=seg_config.model_name,
-            temperature=seg_config.temperature,
+            endpoint=seg_config.llm.base_url,
+            model_name=seg_config.llm.model_name,
+            temperature=seg_config.llm.temperature,
             max_new_tokens=seg_config.max_new_tokens,
             text_limit_chars=seg_config.text_limit_chars,
-            max_retries=seg_config.max_retries,
-            retry_delay=seg_config.retry_delay,
+            provider=seg_config.llm.provider,
+            max_retries=seg_config.llm.max_retries,
+            retry_delay=seg_config.llm.retry_delay,
         )
