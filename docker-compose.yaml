@@ -13,7 +13,7 @@ services:
     networks:
       - app-decide_default
     environment:
-      SEGMENTATION__API_KEY: "SECRET"
+      SEGMENTATION__LLM__API_KEY: "SECRET"
       LOG_LEVEL: "info"
       ALLOW_MU_AUTH_SUDO: true
       APACHE_TIKA_URL: "http://apache_tika:9998/tika"
