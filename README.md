@@ -8,7 +8,7 @@ This service allows to extract the content from remote or local PDfs. For remote
 pdf-content:
     image: semanticai/pdf-content-service:0.0.12
     environment:
-      SEGMENTATION__API_KEY: "SECRET"
+      SEGMENTATION__LLM__API_KEY: "SECRET"
       APACHE_TIKA_URL: "http://apache-tika:9998/tika"
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
       PUBLICATION_GRAPH: http://mu.semte.ch/graphs/public/pdf
@@ -25,116 +25,107 @@ pdf-content:
 
 ## Configuration
 
-The service uses a `config.json` file for segmentation settings. The `segmentation` section controls which LLM provider is used to segment PDF content into structured decisions.
+The service uses a `config.json` file for segmentation settings. The `segmentation.llm` section controls which LLM segments PDF content into structured decisions. LLM calls are routed through [LangChain](https://python.langchain.com)'s `init_chat_model`, so the provider is chosen explicitly via the `provider` field (rather than inferred from the endpoint).
 
-### Segmentation Provider Options
+### Segmentation examples
 
-The segmentation module supports any OpenAI-compatible API, including Azure OpenAI, Ollama, and third-party providers (Mistral, etc.). The provider is determined by the `endpoint` URL:
-
-| Endpoint pattern | Provider |
-|---|---|
-| `*.azure.com` | Azure OpenAI |
-| Any other URL | OpenAI-compatible (Ollama, Mistral, etc.) |
-
-#### Ollama (local)
+#### Mistral AI (default, ships out of the box)
 
 ```json
 {
   "segmentation": {
-    "model_name": "mistral-large-latest",
-    "endpoint": "http://ollama:11434/v1",
-    "api_key": "ollama",
-    "max_new_tokens": 26000,
-    "text_limit_chars": 100000,
-    "temperature": 0.0,
-    "max_retries": 3,
-    "retry_delay": 15.0
-  }
-}
-```
-
-- `endpoint`: URL of your Ollama instance (use `http://localhost:11434/v1` for local dev, or the Docker service name in compose)
-- `api_key`: Can be set to any dummy value (e.g. `"ollama"`) — Ollama doesn't require authentication
-- `model_name`: Must match a model available in your Ollama instance (e.g. `"mistral-large-latest"`, `"llama3"`, `"gemma2"`)
-
-#### Mistral AI (external)
-
-```json
-{
-  "segmentation": {
-    "model_name": "mistral-large-latest",
-    "endpoint": "https://api.mistral.ai/v1",
-    "api_key": "your-mistral-api-key",
+    "llm": {
+      "provider": "mistralai",
+      "model_name": "mistral-large-latest",
+      "base_url": "https://api.mistral.ai/v1",
+      "temperature": 0.1
+    },
     "max_new_tokens": 250000,
-    "text_limit_chars": 1000000,
-    "temperature": 0.1,
-    "max_retries": 3,
-    "retry_delay": 15.0
+    "text_limit_chars": 1000000
   }
 }
 ```
 
-- `endpoint`: `https://api.mistral.ai/v1`
-- `api_key`: Your Mistral API key (or set via the `SEGMENTATION__API_KEY` environment variable)
+- `provider`: `mistralai` (uses the bundled `langchain-mistralai` package)
+- `base_url`: `https://api.mistral.ai/v1`
+- API key: provide via the `SEGMENTATION__LLM__API_KEY` environment variable (preferred), or an `api_key` field under `llm`
 
-#### Azure OpenAI
+#### Gemma (local HuggingFace model, ships out of the box)
 
-```json
-{
-  "segmentation": {
-    "model_name": "gpt-4.1",
-    "endpoint": "https://YOUR_RESOURCE.openai.azure.com/",
-    "api_key": "your-azure-api-key",
-    "max_new_tokens": 128000,
-    "text_limit_chars": 100000,
-    "temperature": 0.0,
-    "max_retries": 3,
-    "retry_delay": 15.0
-  }
-}
-```
-
-- `endpoint`: Your Azure OpenAI resource URL (must contain `azure.com`)
-- `model_name`: Your Azure deployment name
-- `api_key`: Your Azure OpenAI API key
-
-#### Gemma (local HuggingFace model)
-
-For a fully local, non-LLM-API segmentation approach using a fine-tuned Gemma model:
+For fully local segmentation using a fine-tuned Gemma model (no external API), set `model_name` to the Gemma model — no `provider`/`base_url`/`api_key` needed:
 
 ```json
 {
   "segmentation": {
-    "model_name": "wdmuer/decide-marked-segmentation",
+    "llm": {
+      "model_name": "wdmuer/decide-marked-segmentation",
+      "temperature": 0.1
+    },
     "max_new_tokens": 4096,
-    "temperature": 0.1
+    "text_limit_chars": 16000
   }
 }
 ```
 
-No `endpoint` or `api_key` is required. The model is loaded via the HuggingFace `transformers` library.
+The model is loaded via the HuggingFace `transformers` library.
 
-### Configuration Reference
+#### Azure OpenAI (requires an extra package)
+
+> **⚠️ Not bundled:** Azure OpenAI needs the `langchain-openai` integration package, which is **not** in this service's `requirements.txt`. You must add `langchain-openai` to `requirements.txt` and rebuild the image before this provider will work.
+
+```json
+{
+  "segmentation": {
+    "llm": {
+      "provider": "azure_openai",
+      "model_name": "your-azure-deployment-name",
+      "base_url": "https://YOUR_RESOURCE.openai.azure.com/",
+      "temperature": 0.0
+    },
+    "max_new_tokens": 128000,
+    "text_limit_chars": 100000
+  }
+}
+```
+
+- `provider`: `azure_openai`
+- `model_name`: your Azure **deployment** name
+- `base_url`: your Azure OpenAI resource URL (must contain `azure.com`)
+- API key: supplied via `SEGMENTATION__LLM__API_KEY`
+- Depending on your Azure setup you may also need to supply an API version to `init_chat_model` (e.g. via the `OPENAI_API_VERSION` environment variable)
+
+> **Other providers (Ollama, OpenAI, …):** LangChain supports these too, but only `langchain-mistralai` is bundled in this service's `requirements.txt`. To use another provider, add its integration package (e.g. `langchain-ollama`, `langchain-openai`) to `requirements.txt`, then set `provider` accordingly (e.g. `"ollama"`, `"openai"`) with the matching `model_name`/`base_url`.
+
+### Configuration reference
+
+`segmentation.llm.*`:
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model_name` | string | `"gpt-4.1"` | Model/deployment name |
-| `api_key` | string \| null | `null` | API key (also via `SEGMENTATION__API_KEY` env var) |
-| `endpoint` | string \| null | `null` | API endpoint URL |
-| `max_new_tokens` | int | `26000` | Max output tokens (must be >= `text_limit_chars / 4`) |
-| `text_limit_chars` | int | `100000` | Max input characters sent to the LLM |
+| `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, `openai`, …) |
+| `model_name` | string | `"mistral-large-latest"` | Model name for the provider; set to a HuggingFace model (e.g. `wdmuer/decide-marked-segmentation`) to use the local Gemma path |
+| `api_key` | string \| null | `null` | API key (preferably supplied via `SEGMENTATION__LLM__API_KEY`) |
+| `base_url` | string \| null | `null` | Base URL of the LLM endpoint |
 | `temperature` | float | `0.0` | Generation temperature |
 | `max_retries` | int | `3` | Retry attempts on LLM failure |
 | `retry_delay` | float | `15.0` | Seconds between retries |
 
+`segmentation.*`:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `max_new_tokens` | int | `25000` | Max output tokens (must be >= `text_limit_chars / 4`) |
+| `text_limit_chars` | int | `100000` | Max input characters sent to the LLM (longer documents are truncated) |
+
 ### Environment Variables
 
-Segmentation settings can also be overridden via environment variables using the `SEGMENTATION__` prefix (double underscore for nesting):
+Config values can be overridden via environment variables using the `SEGMENTATION__` prefix, with `__` (double underscore) for nesting:
 
 ```
-SEGMENTATION__API_KEY="sk-..."
-SEGMENTATION__ENDPOINT="https://api.mistral.ai/v1"
-SEGMENTATION__MODEL_NAME="mistral-large-latest"
+SEGMENTATION__LLM__API_KEY="your-api-key"
+SEGMENTATION__LLM__PROVIDER="mistralai"
+SEGMENTATION__LLM__MODEL_NAME="mistral-large-latest"
+SEGMENTATION__LLM__BASE_URL="https://api.mistral.ai/v1"
 ```
 
 ## Running
