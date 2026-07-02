@@ -22,7 +22,121 @@ pdf-content:
 2. Mount the folder data/files in the lblod/app-decide repo as a volume and add the mounted path as the environment variable 'MOUNTED_SHARE_FOLDER'. This is the location where the local PDFs must be stored, whereas the remote PDFs will be saved in the folder 'extract' at that location.
 
 3. The file [sparql_config.py](src/sparql_config.py) allows to easily configure SPARQL prefixes and URIs. In case a single graph for input and a single graph for output is desired, set the environment variables TARGET_GRAPH (input) and/or PUBLICATION_GRAPH (output).
-   
+
+## Configuration
+
+The service uses a `config.json` file for segmentation settings. The `segmentation` section controls which LLM provider is used to segment PDF content into structured decisions.
+
+### Segmentation Provider Options
+
+The segmentation module supports any OpenAI-compatible API, including Azure OpenAI, Ollama, and third-party providers (Mistral, etc.). The provider is determined by the `endpoint` URL:
+
+| Endpoint pattern | Provider |
+|---|---|
+| `*.azure.com` | Azure OpenAI |
+| Any other URL | OpenAI-compatible (Ollama, Mistral, etc.) |
+
+#### Ollama (local)
+
+```json
+{
+  "segmentation": {
+    "model_name": "mistral-large-latest",
+    "endpoint": "http://ollama:11434/v1",
+    "api_key": "ollama",
+    "max_new_tokens": 26000,
+    "text_limit_chars": 100000,
+    "temperature": 0.0,
+    "max_retries": 3,
+    "retry_delay": 15.0
+  }
+}
+```
+
+- `endpoint`: URL of your Ollama instance (use `http://localhost:11434/v1` for local dev, or the Docker service name in compose)
+- `api_key`: Can be set to any dummy value (e.g. `"ollama"`) — Ollama doesn't require authentication
+- `model_name`: Must match a model available in your Ollama instance (e.g. `"mistral-large-latest"`, `"llama3"`, `"gemma2"`)
+
+#### Mistral AI (external)
+
+```json
+{
+  "segmentation": {
+    "model_name": "mistral-large-latest",
+    "endpoint": "https://api.mistral.ai/v1",
+    "api_key": "your-mistral-api-key",
+    "max_new_tokens": 250000,
+    "text_limit_chars": 1000000,
+    "temperature": 0.1,
+    "max_retries": 3,
+    "retry_delay": 15.0
+  }
+}
+```
+
+- `endpoint`: `https://api.mistral.ai/v1`
+- `api_key`: Your Mistral API key (or set via the `SEGMENTATION__API_KEY` environment variable)
+
+#### Azure OpenAI
+
+```json
+{
+  "segmentation": {
+    "model_name": "gpt-4.1",
+    "endpoint": "https://YOUR_RESOURCE.openai.azure.com/",
+    "api_key": "your-azure-api-key",
+    "max_new_tokens": 128000,
+    "text_limit_chars": 100000,
+    "temperature": 0.0,
+    "max_retries": 3,
+    "retry_delay": 15.0
+  }
+}
+```
+
+- `endpoint`: Your Azure OpenAI resource URL (must contain `azure.com`)
+- `model_name`: Your Azure deployment name
+- `api_key`: Your Azure OpenAI API key
+
+#### Gemma (local HuggingFace model)
+
+For a fully local, non-LLM-API segmentation approach using a fine-tuned Gemma model:
+
+```json
+{
+  "segmentation": {
+    "model_name": "wdmuer/decide-marked-segmentation",
+    "max_new_tokens": 4096,
+    "temperature": 0.1
+  }
+}
+```
+
+No `endpoint` or `api_key` is required. The model is loaded via the HuggingFace `transformers` library.
+
+### Configuration Reference
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `model_name` | string | `"gpt-4.1"` | Model/deployment name |
+| `api_key` | string \| null | `null` | API key (also via `SEGMENTATION__API_KEY` env var) |
+| `endpoint` | string \| null | `null` | API endpoint URL |
+| `max_new_tokens` | int | `26000` | Max output tokens (must be >= `text_limit_chars / 4`) |
+| `text_limit_chars` | int | `100000` | Max input characters sent to the LLM |
+| `temperature` | float | `0.0` | Generation temperature |
+| `max_retries` | int | `3` | Retry attempts on LLM failure |
+| `retry_delay` | float | `15.0` | Seconds between retries |
+
+### Environment Variables
+
+Segmentation settings can also be overridden via environment variables using the `SEGMENTATION__` prefix (double underscore for nesting):
+
+```
+SEGMENTATION__API_KEY="sk-..."
+SEGMENTATION__ENDPOINT="https://api.mistral.ai/v1"
+SEGMENTATION__MODEL_NAME="mistral-large-latest"
+```
+
 ## Running
 Run the container using 
 ```
