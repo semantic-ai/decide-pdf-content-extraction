@@ -638,6 +638,14 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         for extraction_result in extraction_results:
             pdf_url = extraction_result["pdf_url"]
             try:
+                if extraction_result.get("skipped"):
+                    manifestation_uri = self.create_manifestation(
+                        extraction_result["byte_size"], pdf_url, skipped=True)
+                    self.results_container_uris.append(
+                        self.create_output_container(manifestation_uri))
+                    successes += 1
+                    continue
+
                 try:
                     language = langdetect.detect(extraction_result["content"])
                 except Exception as e:

@@ -39,51 +39,57 @@ class NerConfig(BaseModel):
     )
 
 
-class SegmentationConfig(BaseModel):
-    """Segmentation model configuration for document structure extraction."""
+class LlmConfig(BaseModel):
+    """LLM provider configuration for the segmentation task."""
 
+    provider: str = Field(
+        default="mistralai",
+        description="LangChain provider name, e.g. 'mistralai', 'ollama', 'openai'"
+    )
     model_name: str = Field(
-        default="gpt-4.1",
-        description="LLM deployment / model name"
+        default="mistral-large-latest",
+        description="Model name as understood by the provider"
     )
     api_key: SecretStr | None = Field(
         default=None,
-        description="API key for the LLM endpoint"
+        description="API key for the provider"
     )
-    endpoint: str | None = Field(
+    base_url: str | None = Field(
         default=None,
-        description="API endpoint URL for the LLM service"
-    )
-    max_new_tokens: int = Field(
-        default=26000,
-        ge=100,
-        description="Maximum tokens to generate"
-    )
-    text_limit_chars: int = Field(
-        default=100000,
-        ge=1000,
-        description="Maximum characters of document text sent to the LLM; longer documents are silently truncated"
+        description="Custom base URL for the LLM endpoint"
     )
     temperature: float = Field(
-        default=0.0,
-        ge=0.0,
-        le=2.0,
+        default=0.0, ge=0.0, le=2.0,
         description="Generation temperature (lower = more deterministic)"
     )
     max_retries: int = Field(
-        default=3,
-        ge=1,
+        default=3, ge=1,
         description="Max attempts on LLM call failure"
     )
     retry_delay: float = Field(
-        default=15.0,
-        ge=0,
+        default=15.0, ge=0,
         description="Seconds to sleep between retries"
+    )
+
+
+class SegmentationConfig(BaseModel):
+    """Segmentation model configuration for document structure extraction."""
+
+    llm: LlmConfig = Field(
+        default_factory=LlmConfig,
+        description="LLM provider and model settings"
+    )
+    max_new_tokens: int = Field(
+        default=26000, ge=100,
+        description="Maximum tokens to generate"
+    )
+    text_limit_chars: int = Field(
+        default=100000, ge=1000,
+        description="Maximum characters of document text sent to the LLM; longer documents are silently truncated"
     )
 
     @model_validator(mode="after")
     def max_new_tokens_exceeds_text_limit(self) -> "SegmentationConfig":
-        # A rough upper bound: 1 char ≈ 0.25 tokens, so output tokens must cover at least the input chars
         if self.max_new_tokens < self.text_limit_chars // 4:
             raise ValueError(
                 f"max_new_tokens ({self.max_new_tokens}) is too low for text_limit_chars "
