@@ -20,7 +20,6 @@ services:
       EXPECTED_TASK_PREDICATE: "http://www.w3.org/ns/adms#status"
       EXPECTED_TASK_OBJECT: "http://redpencil.data.gift/id/concept/JobStatus/scheduled"
       MOUNTED_SHARE_FOLDER: "/mnt/share"
-      CONFIG_PATH: /app/config.json
       TARGET_GRAPH: http://mu.semte.ch/graphs/harvesting
       JOB_GRAPH: http://mu.semte.ch/graphs/harvesting
       DATA_CONTAINER_GRAPH: http://mu.semte.ch/graphs/harvesting
@@ -35,13 +34,14 @@ services:
       WORKS_GRAPH: http://mu.semte.ch/graphs/public/pdf
       MANIFESTATIONS_GRAPH: http://mu.semte.ch/graphs/public/pdf
       AI_GRAPH: http://mu.semte.ch/graphs/public/pdf
-      FORCE_VERSIONED_AGENT_URI: true
-      CONFIGURED_AGENT_URI: http://lblod.data.gift/id/components/pdf-to-eli/decide/commit/92a6988130508c49c87b20d10bdd06bf188162b5
-      CONFIG_REPO_URL: https://github.com/lblod/app-decide/commit/92a6988130508c49c87b20d10bdd06bf188162b5
+      CONFIG_PATH: /config/config.json
+      COMPOSE_FILE: /tmp/docker-compose.yaml
+      COMPOSE_SERVICE: pdf-content
     volumes:
       - ./:/app
       - ./../app-decide/data/files:/mnt/share
-      - ./config.json:/app/config.json:ro # Mount config as read-only
+      - ./config.json:/config/config.json:ro # Mount config as read-only
+      - ./docker-compose.yaml:/tmp/docker-compose.yaml
 
 networks:
   app-decide_default:
