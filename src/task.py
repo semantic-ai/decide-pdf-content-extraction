@@ -630,6 +630,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             }} LIMIT 1
             """
         ).substitute(
+                graph=sparql_escape_uri(GRAPHS["jobs"]),
                 task=sparql_escape_uri(self.task_uri)
             )
 
