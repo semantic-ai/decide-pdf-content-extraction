@@ -642,7 +642,6 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         job_uri = bindings[0]["parentJob"]["value"]
         return job_uri
 
-    # TODO: Need to consider scenario where job already has shape
     def create_target_shape(self, expression_uris: list[str]):
         """
         Create a target shape resource linked to the parent job of this task.
@@ -664,23 +663,35 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         q = Template(
             get_prefixes_for_query("mu", "ext") + f"""
                 PREFIX sh: <http://www.w3.org/ns/shacl#>
+                DELETE {{
+                  GRAPH $graph {{
+                    ?job ext:shapeForTargets ?oldShape .
+                    ?oldShape ?p ?o .
+                  }}
+                }}
                 INSERT {{
                   GRAPH $graph {{
-                    ?shape a sh:NodeShape ;
+                    ?newShape a sh:NodeShape ;
                            mu:uuid $uuid ;
                            sh:targetNode ?node .
                     ?job a ext:AnnotationJob ;
-                         ext:shapeForTargets ?shape .
+                         ext:shapeForTargets ?newShape .
                   }}
                 }} WHERE {{
                   VALUES ?job {{
                     $job
                   }}
-                  VALUES ?shape {{
+                  VALUES ?newShape {{
                     $shape
                   }}
                   VALUES ?node {{
                     $expressions
+                  }}
+                  OPTIONAL {{
+                    GRAPH $graph {{
+                      ?job ext:shapeForTargets ?oldShape .
+                      ?oldShape ?p ?o .
+                    }}
                   }}
                 }}
             """
