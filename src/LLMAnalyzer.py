@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from typing import Dict, Any, Optional, List, Tuple
 
 from langchain.chat_models import init_chat_model
@@ -28,11 +29,15 @@ class LLMAnalyzer:
         json_mode: bool = True,
         max_retries: int = 3,
         retry_delay: float = 15.0,
+        task: Optional[Any] = None,
+        endpoint: Optional[str] = None,
     ):
         self.model_name = model_name
         self._provider = provider
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._task = task
+        self._endpoint = endpoint or base_url or "local"
 
         kwargs: Dict[str, Any] = {"temperature": temperature}
         if api_key:
@@ -120,7 +125,14 @@ class LLMAnalyzer:
         ]
 
         try:
+            start = time.monotonic()
             response = retry_call(self._chat_model.invoke, messages, max_retries=self._max_retries, retry_delay=self._retry_delay)
+            duration = time.monotonic() - start
+
+            if self._task is not None:
+                from .ai_logging import record_llm_call
+                record_llm_call(self._task, self._endpoint, response, duration)
+
             result = self._parse_json(response.content)
 
             if postprocess and 'spans' in result:

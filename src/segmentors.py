@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import datetime, timezone
 from abc import ABC, abstractmethod
 from span_aligner import SpanAligner
@@ -39,7 +40,7 @@ def log_date(task_uri: str, predicate: str):
 class AbstractSegmentor(ABC):
     """Abstract base class for a segmentation strategy."""
 
-    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000):
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = None, temperature: float = 0.1, max_new_tokens: int = 2000, task: Optional[Any] = None):
         self.task_uri = task_uri
         self.logger = logger
         self.api_key = api_key
@@ -47,6 +48,7 @@ class AbstractSegmentor(ABC):
         self.model_name = model_name
         self.temperature = temperature
         self.max_new_tokens = max_new_tokens
+        self._task = task
 
     @abstractmethod
     def segment(self, text: str) -> List[Dict[str, Any]]:
@@ -85,8 +87,8 @@ SEGMENTS:
 ['TITLE', 'PARTICIPANTS', 'MOTIVATION', 'PREVIOUS_DECISIONS', 'LEGAL_FRAMEWORK', 'DECISION', 'VOTING', 'ARTICLE']
 ```"""
 
-    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "wdmuer/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096):
-        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "wdmuer/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096, task: Optional[Any] = None):
+        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens, task=task)
 
     def get_generator(self):
         """Lazy-load the segmentation model using config settings."""
@@ -275,6 +277,7 @@ SEGMENTS:
         ]
 
         generator = self.get_generator()
+        start = time.monotonic()
         output = generator(
             messages,
             max_new_tokens=self.max_new_tokens,
@@ -283,6 +286,11 @@ SEGMENTS:
             top_p=0.95,
             do_sample=True,
         )
+        duration = time.monotonic() - start
+
+        if self._task is not None:
+            from .ai_logging import record_ml_call
+            record_ml_call(self._task, self.endpoint or "local", duration)
 
         raw_output = output[0]["generated_text"]
         fixed_output = self.fix_missing_tags(raw_output)
@@ -436,8 +444,8 @@ Line-numbered text:
         "tagged_text": {"default": "", "type": str}
     }
 
-    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "mistral-large-latest", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, provider: str = "mistralai", max_retries: int = 3, retry_delay: float = 15.0):
-        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens)
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "mistral-large-latest", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, provider: str = "mistralai", max_retries: int = 3, retry_delay: float = 15.0, task: Optional[Any] = None):
+        super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens, task=task)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:
             raise ImportError("LLMAnalyzer class is not available.")
@@ -450,6 +458,8 @@ Line-numbered text:
             temperature=self.temperature,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            task=self._task,
+            endpoint=self.endpoint,
         )
 
     def format_segment(self, segment: Dict[str, Any]) -> Dict[str, Any]:
@@ -507,7 +517,7 @@ Line-numbered text:
         return [self.format_segment(span) for span in annotations.get("spans", [])]
 
 
-def get_segmentor(task_uri: str) -> AbstractSegmentor:
+def get_segmentor(task_uri: str, task: Optional[Any] = None) -> AbstractSegmentor:
     """Create a Segmentor configured from app config."""
     seg_config = get_config().segmentation
     api_key = seg_config.llm.api_key.get_secret_value() if seg_config.llm.api_key else None
@@ -520,6 +530,7 @@ def get_segmentor(task_uri: str) -> AbstractSegmentor:
             model_name=seg_config.llm.model_name,
             temperature=seg_config.llm.temperature,
             max_new_tokens=seg_config.max_new_tokens,
+            task=task,
         )
     else:
         return LLMSegmentor(
@@ -533,4 +544,5 @@ def get_segmentor(task_uri: str) -> AbstractSegmentor:
             provider=seg_config.llm.provider,
             max_retries=seg_config.llm.max_retries,
             retry_delay=seg_config.llm.retry_delay,
+            task=task,
         )
