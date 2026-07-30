@@ -613,6 +613,100 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
             return decisions
 
+    def get_parent_job(self):
+        """
+        Get the URI of the job resource that is the parent of this task.
+
+        Returns:
+            The URI of the job that is this task's parent
+        """
+        q = Template(
+            get_prefixes_for_query("dct") + f"""
+            SELECT DISTINCT ?parentJob
+            WHERE {{
+              GRAPH $graph {{
+                $task dct:isPartOf ?parentJob .
+              }}
+            }} LIMIT 1
+            """
+        ).substitute(
+                graph=sparql_escape_uri(GRAPHS["jobs"]),
+                task=sparql_escape_uri(self.task_uri)
+            )
+
+        bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
+
+        if not bindings:
+            raise RuntimeError("No parent job found for task")
+
+        job_uri = bindings[0]["parentJob"]["value"]
+        return job_uri
+
+    def create_target_shape(self, expression_uris: list[str]):
+        """
+        Create a target shape resource linked to the parent job of this task.
+
+        Args:
+            expression_uris: List of URIs for ELI Expression resources
+
+        Returns:
+            The create SHACL node shape URI
+        """
+        node_shape_uuid = str(uuid.uuid4())
+        node_shape_uri = f"http://redpencil.data.gift/id/shapes/{node_shape_uuid}"
+
+        parent_job = self.get_parent_job()
+
+        safe_expression_uris = "\n".join(map(sparql_escape_uri, expression_uris))
+
+        # TODO: Add sh prefix to configured ones
+        q = Template(
+            get_prefixes_for_query("mu", "ext") + f"""
+                PREFIX sh: <http://www.w3.org/ns/shacl#>
+                DELETE {{
+                  GRAPH $graph {{
+                    ?job ext:shapeForTargets ?oldShape .
+                    ?oldShape ?p ?o .
+                  }}
+                }}
+                INSERT {{
+                  GRAPH $graph {{
+                    ?newShape a sh:NodeShape ;
+                           mu:uuid $uuid ;
+                           sh:targetNode ?node .
+                    ?job a ext:AnnotationJob ;
+                         ext:shapeForTargets ?newShape .
+                  }}
+                }} WHERE {{
+                  VALUES ?job {{
+                    $job
+                  }}
+                  VALUES ?newShape {{
+                    $shape
+                  }}
+                  VALUES ?node {{
+                    $expressions
+                  }}
+                  OPTIONAL {{
+                    GRAPH $graph {{
+                      ?job ext:shapeForTargets ?oldShape .
+                      ?oldShape ?p ?o .
+                    }}
+                  }}
+                }}
+            """
+        ).substitute(
+            graph=sparql_escape_uri(GRAPHS["jobs"]),
+            shape=sparql_escape_uri(node_shape_uri),
+            uuid=sparql_escape_string(node_shape_uuid),
+            job=sparql_escape_uri(parent_job),
+            expressions=safe_expression_uris
+        )
+
+        update(q, sudo=True)
+
+        return node_shape_uri
+
     def process(self):
         """
         Implementation of Task's process function that
@@ -634,6 +728,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         errors: list[str] = []
         successes = 0
         total = len(extraction_results)
+
+        expression_uris: list[str] = []
 
         for extraction_result in extraction_results:
             pdf_url = extraction_result["pdf_url"]
@@ -669,6 +765,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                                                              language,
                                                              expression_uri)
 
+                    expression_uris.append(expression_uri)
                     self.results_container_uris.append(
                         self.create_output_container(expression_uri))
                     self.results_container_uris.append(
@@ -690,6 +787,9 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 except Exception:
                     logger.exception(
                         f"Could not persist per-PDF error for {pdf_url}")
+
+        if (len(expression_uris) > 0):
+            self.create_target_shape(expression_uris)
 
         fail_if_no_successes(
             label="PDF processing",
