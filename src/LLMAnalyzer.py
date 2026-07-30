@@ -75,6 +75,9 @@ class LLMAnalyzer:
     def _clean_tag(self, t: str) -> str:
         return t.strip().strip("<>").strip()
 
+    def _clamp(self, idx, n):
+        return min(max(idx, 0), n - 1)
+
     def _locate(self, lines, i, needle, radius=8):
         # 1) exact on the stated line
         if 0 <= i < len(lines) and needle in lines[i]:
@@ -90,11 +93,16 @@ class LLMAnalyzer:
 
     def reconstruct(self, lines, spans):
         n = len(lines)
+        if n == 0:
+            return ""
         opens = {i: [] for i in range(n)}
         closes = {i: [] for i in range(n)}
         sublines = []  # (order, stated_line_idx, tag, needle) — line may drift
 
         for order, s in enumerate(spans):
+            if "start_line" not in s or "end_line" not in s or "tag" not in s:
+                logger.warning("Skipping malformed span (missing keys): %r", s)
+                continue
             a, b, tag = s['start_line'] - 1, s['end_line'] - 1, self._clean_tag(s['tag'])
             if s.get('text') is not None:
                 if a != b:
@@ -102,8 +110,14 @@ class LLMAnalyzer:
                                    "using start_line", s['text'], a + 1, b + 1)
                 sublines.append((order, a, tag, s['text']))
             else:
-                opens[a].append((order, b - a, tag))
-                closes[b].append((order, b - a, tag))
+                ca, cb = self._clamp(a, n), self._clamp(b, n)
+                if (ca, cb) != (a, b):
+                    logger.warning("Block span <%s> line range %d..%d out of bounds (1..%d); "
+                                   "clamped to %d..%d", tag, a + 1, b + 1, n, ca + 1, cb + 1)
+                if cb < ca:
+                    ca, cb = cb, ca
+                opens[ca].append((order, cb - ca, tag))
+                closes[cb].append((order, cb - ca, tag))
 
         # Mutable per-line buffer that sub-line tags are written into.
         out_lines = list(lines)
