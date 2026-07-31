@@ -717,7 +717,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         """
         input = self.fetch_data_from_input_container()
 
-        segmentor = get_segmentor(self.task_uri)
+        segmentor = get_segmentor(self.task_uri, task=self)
         split_enabled = self.should_split_decisions()
         logger.info(
             f"Decision splitting {'enabled' if split_enabled else 'disabled'} "

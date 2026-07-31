@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from typing import Dict, Any, Optional, List, Tuple
 
 from langchain.chat_models import init_chat_model
@@ -28,11 +29,15 @@ class LLMAnalyzer:
         json_mode: bool = True,
         max_retries: int = 3,
         retry_delay: float = 15.0,
+        task: Optional[Any] = None,
+        endpoint: Optional[str] = None,
     ):
         self.model_name = model_name
         self._provider = provider
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._task = task
+        self._endpoint = endpoint or base_url or "local"
 
         kwargs: Dict[str, Any] = {"temperature": temperature}
         if api_key:
@@ -70,30 +75,78 @@ class LLMAnalyzer:
     def _clean_tag(self, t: str) -> str:
         return t.strip().strip("<>").strip()
 
-    def reconstruct(self, lines: List[str], spans: List[Dict[str, Any]]) -> str:
+    def _clamp(self, idx, n):
+        return min(max(idx, 0), n - 1)
+
+    def _locate(self, lines, i, needle, radius=8):
+        # 1) exact on the stated line
+        if 0 <= i < len(lines) and needle in lines[i]:
+            return i
+        # 2) nearby lines (LLM miscounts by a few lines, esp. around page breaks)
+        for d in range(1, radius + 1):
+            for j in (i - d, i + d):
+                if 0 <= j < len(lines) and needle in lines[j]:
+                    return j
+        # 3) globally unique occurrence anywhere
+        hits = [j for j, ln in enumerate(lines) if needle in ln]
+        return hits[0] if len(hits) == 1 else None  # None = ambiguous or absent
+
+    def reconstruct(self, lines, spans):
         n = len(lines)
+        if n == 0:
+            return ""
         opens = {i: [] for i in range(n)}
         closes = {i: [] for i in range(n)}
-        subline = {i: [] for i in range(n)}
+        sublines = []  # (order, stated_line_idx, tag, needle) — line may drift
+
         for order, s in enumerate(spans):
+            if "start_line" not in s or "end_line" not in s or "tag" not in s:
+                logger.warning("Skipping malformed span (missing keys): %r", s)
+                continue
             a, b, tag = s['start_line'] - 1, s['end_line'] - 1, self._clean_tag(s['tag'])
             if s.get('text') is not None:
-                assert a == b
-                subline[a].append((order, tag, s['text']))
+                if a != b:
+                    logger.warning("Sub-line span %r has start_line != end_line (%d..%d); "
+                                   "using start_line", s['text'], a + 1, b + 1)
+                sublines.append((order, a, tag, s['text']))
             else:
-                opens[a].append((order, b - a, tag))
-                closes[b].append((order, b - a, tag))
+                ca, cb = self._clamp(a, n), self._clamp(b, n)
+                if (ca, cb) != (a, b):
+                    logger.warning("Block span <%s> line range %d..%d out of bounds (1..%d); "
+                                   "clamped to %d..%d", tag, a + 1, b + 1, n, ca + 1, cb + 1)
+                if cb < ca:
+                    ca, cb = cb, ca
+                opens[ca].append((order, cb - ca, tag))
+                closes[cb].append((order, cb - ca, tag))
+
+        # Mutable per-line buffer that sub-line tags are written into.
+        out_lines = list(lines)
+
+        # Pass 1: place sub-line tags, tolerating line-number drift.
+        for order, i, tag, needle in sorted(sublines, key=lambda x: x[0]):
+            j = self._locate(lines, i, needle)
+            if j is None:
+                logger.warning("Skipping unplaceable sub-line tag %r (stated line %d)",
+                               needle, i + 1)
+                continue
+            if j != i:
+                logger.info("Relocated sub-line %r from line %d to %d", needle, i + 1, j + 1)
+            body = out_lines[j]
+            idx = body.find(needle)
+            if idx == -1:
+                # Present in the original line but a prior tag on the same line
+                # overlapped/consumed it. Degrade gracefully.
+                logger.warning("Sub-line tag %r no longer findable on line %d after "
+                               "prior tagging; skipping", needle, j + 1)
+                continue
+            out_lines[j] = body[:idx] + f'<{tag}>' + needle + f'</{tag}>' + body[idx + len(needle):]
+
+        # Pass 2: wrap each (possibly sub-line-tagged) line with line-level tags.
         out = []
         for i in range(n):
             open_str = ''.join(f'<{t}>' for _, _, t in sorted(opens[i], key=lambda x: (-x[1], x[0])))
             close_str = ''.join(f'</{t}>' for _, _, t in sorted(closes[i], key=lambda x: (x[1], -x[0])))
-            body = lines[i]
-            for _, tag, needle in subline[i]:
-                idx = body.find(needle)
-                if idx == -1:
-                    raise ValueError(f"sub-line text {needle!r} not on line {i+1}")
-                body = body[:idx] + f'<{tag}>' + needle + f'</{tag}>' + body[idx + len(needle):]
-            out.append(open_str + body + close_str)
+            out.append(open_str + out_lines[i] + close_str)
         return '\n'.join(out)
 
     def analyze_single_entry(
@@ -120,7 +173,14 @@ class LLMAnalyzer:
         ]
 
         try:
+            start = time.monotonic()
             response = retry_call(self._chat_model.invoke, messages, max_retries=self._max_retries, retry_delay=self._retry_delay)
+            duration = time.monotonic() - start
+
+            if self._task is not None:
+                from decide_ai_service_base.ai_logging import record_llm_call
+                record_llm_call(self._task, self._endpoint, self.model_name, response, duration)
+
             result = self._parse_json(response.content)
 
             if postprocess and 'spans' in result:
