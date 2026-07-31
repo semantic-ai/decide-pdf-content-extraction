@@ -25,7 +25,7 @@ def test_analyze_logs_llm_call_when_task_provided():
     analyzer._chat_model = MagicMock()
     analyzer._chat_model.invoke.return_value = response
 
-    with patch("src.ai_logging.record_llm_call") as mock_log:
+    with patch("decide_ai_service_base.ai_logging.record_llm_call") as mock_log:
         analyzer.analyze_single_entry(
             text="hello",
             system_prompt="sys",
@@ -37,8 +37,9 @@ def test_analyze_logs_llm_call_when_task_provided():
     call_args = mock_log.call_args[0]
     assert call_args[0] is task
     assert call_args[1] == "http://endpoint/"
-    assert call_args[2] is response
-    assert isinstance(call_args[3], float)
+    assert call_args[2] == "test-model"        # model_uri (added by consolidation)
+    assert call_args[3] is response
+    assert isinstance(call_args[4], float)
 
 
 def test_analyze_skips_logging_when_task_none():
@@ -51,7 +52,7 @@ def test_analyze_skips_logging_when_task_none():
     analyzer._chat_model = MagicMock()
     analyzer._chat_model.invoke.return_value = response
 
-    with patch("src.ai_logging.record_llm_call") as mock_log:
+    with patch("decide_ai_service_base.ai_logging.record_llm_call") as mock_log:
         analyzer.analyze_single_entry(
             text="hello",
             system_prompt="sys",

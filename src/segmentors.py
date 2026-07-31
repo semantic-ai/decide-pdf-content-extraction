@@ -289,8 +289,8 @@ SEGMENTS:
         duration = time.monotonic() - start
 
         if self._task is not None:
-            from .ai_logging import record_ml_call
-            record_ml_call(self._task, self.endpoint or "local", duration)
+            from decide_ai_service_base.ai_logging import record_ml_call
+            record_ml_call(self._task, self.endpoint or "local", self.model_name, duration)
 
         raw_output = output[0]["generated_text"]
         fixed_output = self.fix_missing_tags(raw_output)

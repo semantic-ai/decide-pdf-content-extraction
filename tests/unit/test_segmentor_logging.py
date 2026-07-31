@@ -12,14 +12,15 @@ def test_gemma_segmentor_logs_ml_call():
     generator_mock.return_value = [{"generated_text": "<TITLE>Foo</TITLE>"}]
 
     with patch.object(seg, "get_generator", return_value=generator_mock), \
-         patch("src.ai_logging.record_ml_call") as mock_log:
+         patch("decide_ai_service_base.ai_logging.record_ml_call") as mock_log:
         seg.segment("Foo bar")
 
     mock_log.assert_called_once()
     call_args = mock_log.call_args[0]
     assert call_args[0] is task
     assert call_args[1] == "http://local-model/"
-    assert isinstance(call_args[2], float)
+    assert call_args[2] == seg.model_name       # model_uri (added by consolidation)
+    assert isinstance(call_args[3], float)
 
 
 def test_gemma_segmentor_skips_logging_without_task():
@@ -29,7 +30,7 @@ def test_gemma_segmentor_skips_logging_without_task():
     generator_mock.return_value = [{"generated_text": "<TITLE>Foo</TITLE>"}]
 
     with patch.object(seg, "get_generator", return_value=generator_mock), \
-         patch("src.ai_logging.record_ml_call") as mock_log:
+         patch("decide_ai_service_base.ai_logging.record_ml_call") as mock_log:
         seg.segment("Foo bar")
 
     mock_log.assert_not_called()
@@ -48,7 +49,7 @@ def test_llm_segmentor_propagates_task_to_analyzer(mock_log_date, mock_aligner):
     mock_chat.invoke.return_value = response
 
     with patch("src.LLMAnalyzer.init_chat_model", return_value=mock_chat), \
-         patch("src.ai_logging.record_llm_call") as mock_log:
+         patch("decide_ai_service_base.ai_logging.record_llm_call") as mock_log:
         seg = LLMSegmentor(
             task_uri="http://task/1",
             endpoint="https://api.mistral.ai/v1",
