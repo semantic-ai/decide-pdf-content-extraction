@@ -663,35 +663,23 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         q = Template(
             get_prefixes_for_query("mu", "ext") + f"""
                 PREFIX sh: <http://www.w3.org/ns/shacl#>
-                DELETE {{
-                  GRAPH $graph {{
-                    ?job ext:shapeForTargets ?oldShape .
-                    ?oldShape ?p ?o .
-                  }}
-                }}
                 INSERT {{
                   GRAPH $graph {{
-                    ?newShape a sh:NodeShape ;
+                    ?shape a sh:NodeShape ;
                            mu:uuid $uuid ;
                            sh:targetNode ?node .
                     ?job a ext:AnnotationJob ;
-                         ext:shapeForTargets ?newShape .
+                         ext:shapeForTargets ?shape .
                   }}
                 }} WHERE {{
                   VALUES ?job {{
                     $job
                   }}
-                  VALUES ?newShape {{
+                  VALUES ?shape {{
                     $shape
                   }}
                   VALUES ?node {{
                     $expressions
-                  }}
-                  OPTIONAL {{
-                    GRAPH $graph {{
-                      ?job ext:shapeForTargets ?oldShape .
-                      ?oldShape ?p ?o .
-                    }}
                   }}
                 }}
             """
