@@ -89,6 +89,10 @@ The model is loaded via the HuggingFace `transformers` library.
 - `provider`: `ollama` (uses`langchain-ollama` package)
 - `base_url`: your Ollama instance; no API key needed
 
+#### Other providers
+
+Any other provider LangChain supports will work too: add its `langchain-*` package (e.g. `langchain-openai` for Azure OpenAI) to `requirements.txt` and rebuild the image, with the caveat that you then maintain that image yourself.
+
 ### Configuration reference
 
 `segmentation.llm.*`:
