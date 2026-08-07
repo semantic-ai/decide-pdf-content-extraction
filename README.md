@@ -69,32 +69,25 @@ For fully local segmentation using a fine-tuned Gemma model (no external API), s
 
 The model is loaded via the HuggingFace `transformers` library.
 
-#### Azure OpenAI (requires an extra package)
-
-> **⚠️ Not bundled:** Azure OpenAI needs the `langchain-openai` integration package, which is **not** in this service's `requirements.txt`. You must add `langchain-openai` to `requirements.txt` and rebuild the image before this provider will work.
+#### Ollama (local LLM, ships out of the box)
 
 ```json
 {
   "segmentation": {
     "llm": {
-      "provider": "azure_openai",
-      "model_name": "your-azure-deployment-name",
-      "base_url": "https://YOUR_RESOURCE.openai.azure.com/",
-      "temperature": 0.0
+      "provider": "ollama",
+      "model_name": "mistral-nemo",
+      "base_url": "http://ollama:11434",
+      "temperature": 0.1
     },
-    "max_new_tokens": 128000,
-    "text_limit_chars": 100000
+    "max_new_tokens": 14000,
+    "text_limit_chars": 50000
   }
 }
 ```
 
-- `provider`: `azure_openai`
-- `model_name`: your Azure **deployment** name
-- `base_url`: your Azure OpenAI resource URL (must contain `azure.com`)
-- API key: supplied via `SEGMENTATION__LLM__API_KEY`
-- Depending on your Azure setup you may also need to supply an API version to `init_chat_model` (e.g. via the `OPENAI_API_VERSION` environment variable)
-
-> **Other providers (Ollama, OpenAI, …):** LangChain supports these too, but only `langchain-mistralai` is bundled in this service's `requirements.txt`. To use another provider, add its integration package (e.g. `langchain-ollama`, `langchain-openai`) to `requirements.txt`, then set `provider` accordingly (e.g. `"ollama"`, `"openai"`) with the matching `model_name`/`base_url`.
+- `provider`: `ollama` (uses`langchain-ollama` package)
+- `base_url`: your Ollama instance; no API key needed
 
 ### Configuration reference
 
@@ -102,7 +95,7 @@ The model is loaded via the HuggingFace `transformers` library.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, `openai`, …) |
+| `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, …) |
 | `model_name` | string | `"mistral-large-2512"` | Model name for the provider; set to a HuggingFace model (e.g. `wdmuer/decide-marked-segmentation`) to use the local Gemma path |
 | `api_key` | string \| null | `null` | API key (preferably supplied via `SEGMENTATION__LLM__API_KEY`) |
 | `base_url` | string \| null | `null` | Base URL of the LLM endpoint |
@@ -129,7 +122,7 @@ SEGMENTATION__LLM__BASE_URL="https://api.mistral.ai/v1"
 ```
 
 ## Running
-Run the container using 
+Run the container using
 ```
 docker compose up -d # run without -d flag when you don't want to run it in the background
 ```

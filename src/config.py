@@ -44,7 +44,7 @@ class LlmConfig(BaseModel):
 
     provider: str = Field(
         default="mistralai",
-        description="LangChain provider name, e.g. 'mistralai', 'ollama', 'openai'"
+        description="LangChain provider name; supported providers are 'mistralai' and 'ollama'"
     )
     model_name: str = Field(
         default="mistral-large-2512",
