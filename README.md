@@ -152,7 +152,7 @@ INSERT DATA {
       a task:Task ;
       mu:uuid "demo-pdf-remote" ;
       adms:status <http://redpencil.data.gift/id/concept/JobStatus/scheduled> ;
-      task:operation <http://lblod.data.gift/id/jobs/concept/TaskOperation/taskop:pdf-to-eli> ;
+      task:operation <http://lblod.data.gift/id/jobs/concept/TaskOperation/pdf-to-eli> ;
       task:inputContainer <http://data.lblod.info/id/data-container/demo-remote> ;
       dct:created "2025-10-31T09:00:00Z"^^xsd:dateTime .
   }
