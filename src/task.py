@@ -747,17 +747,18 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     expression_uuid = str(uuid.uuid4())
                     work_uuid = str(uuid.uuid4())
                     work_uri = self.create_eli_work(expression_uuid, work_uuid)
+
                     expression_uri = self.create_eli_expression(
                         decision, language, manifestation_uri, expression_uuid, work_uri)
-                    title_uri = self.create_title_annotation(decision,
-                                                             language,
-                                                             expression_uri)
-
                     expression_uris.append(expression_uri)
                     self.results_container_uris.append(
                         self.create_output_container(expression_uri))
                     self.results_container_uris.append(
                         self.create_output_container(work_uri))
+
+                    title_uri = self.create_title_annotation(decision,
+                                                             language,
+                                                             expression_uri)
                     self.results_container_uris.append(
                         self.create_output_container(title_uri))
 
