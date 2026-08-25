@@ -50,25 +50,6 @@ The service uses a `config.json` file for segmentation settings. The `segmentati
 - `base_url`: `https://api.mistral.ai/v1`
 - API key: provide via the `SEGMENTATION__LLM__API_KEY` environment variable (preferred), or an `api_key` field under `llm`
 
-#### Gemma (local HuggingFace model, ships out of the box)
-
-For fully local segmentation using a fine-tuned Gemma model (no external API), set `model_name` to the Gemma model — no `provider`/`base_url`/`api_key` needed:
-
-```json
-{
-  "segmentation": {
-    "llm": {
-      "model_name": "lblod/decide-marked-segmentation",
-      "temperature": 0.1
-    },
-    "max_new_tokens": 4096,
-    "text_limit_chars": 16000
-  }
-}
-```
-
-The model is loaded via the HuggingFace `transformers` library.
-
 #### Azure OpenAI (requires an extra package)
 
 > **⚠️ Not bundled:** Azure OpenAI needs the `langchain-openai` integration package, which is **not** in this service's `requirements.txt`. You must add `langchain-openai` to `requirements.txt` and rebuild the image before this provider will work.
@@ -103,7 +84,7 @@ The model is loaded via the HuggingFace `transformers` library.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, `openai`, …) |
-| `model_name` | string | `"mistral-large-2512"` | Model name for the provider; set to a HuggingFace model (e.g. `lblod/decide-marked-segmentation`) to use the local Gemma path |
+| `model_name` | string | `"mistral-large-2512"` | Model name for the provider |
 | `api_key` | string \| null | `null` | API key (preferably supplied via `SEGMENTATION__LLM__API_KEY`) |
 | `base_url` | string \| null | `null` | Base URL of the LLM endpoint |
 | `temperature` | float | `0.0` | Generation temperature |
