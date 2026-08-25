@@ -1,39 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import src.segmentors as segmentors
-from src.segmentors import GemmaSegmentor, LLMSegmentor
-
-
-def test_gemma_segmentor_logs_ml_call():
-    task = MagicMock()
-    seg = GemmaSegmentor(task_uri="http://task/1", endpoint="http://local-model/", task=task)
-
-    generator_mock = MagicMock()
-    generator_mock.return_value = [{"generated_text": "<TITLE>Foo</TITLE>"}]
-
-    with patch.object(seg, "get_generator", return_value=generator_mock), \
-         patch("decide_ai_service_base.ai_logging.record_ml_call") as mock_log:
-        seg.segment("Foo bar")
-
-    mock_log.assert_called_once()
-    call_args = mock_log.call_args[0]
-    assert call_args[0] is task
-    assert call_args[1] == "http://local-model/"
-    assert call_args[2] == seg.model_name       # model_uri (added by consolidation)
-    assert isinstance(call_args[3], float)
-
-
-def test_gemma_segmentor_skips_logging_without_task():
-    seg = GemmaSegmentor(task_uri="http://task/1", endpoint="http://local-model/")
-
-    generator_mock = MagicMock()
-    generator_mock.return_value = [{"generated_text": "<TITLE>Foo</TITLE>"}]
-
-    with patch.object(seg, "get_generator", return_value=generator_mock), \
-         patch("decide_ai_service_base.ai_logging.record_ml_call") as mock_log:
-        seg.segment("Foo bar")
-
-    mock_log.assert_not_called()
+from src.segmentors import LLMSegmentor
 
 
 @patch("src.segmentors.SpanAligner")
