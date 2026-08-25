@@ -87,7 +87,7 @@ SEGMENTS:
 ['TITLE', 'PARTICIPANTS', 'MOTIVATION', 'PREVIOUS_DECISIONS', 'LEGAL_FRAMEWORK', 'DECISION', 'VOTING', 'ARTICLE']
 ```"""
 
-    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "wdmuer/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096, task: Optional[Any] = None):
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "lblod/decide-marked-segmentation", temperature: float = 0.1, max_new_tokens: int = 4096, task: Optional[Any] = None):
         super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens, task=task)
 
     def get_generator(self):
@@ -522,7 +522,7 @@ def get_segmentor(task_uri: str, task: Optional[Any] = None) -> AbstractSegmento
     seg_config = get_config().segmentation
     api_key = seg_config.llm.api_key.get_secret_value() if seg_config.llm.api_key else None
 
-    if seg_config.llm.model_name == "wdmuer/decide-marked-segmentation":
+    if seg_config.llm.model_name == "lblod/decide-marked-segmentation":
         return GemmaSegmentor(
             task_uri=task_uri,
             api_key=api_key,

@@ -58,7 +58,7 @@ For fully local segmentation using a fine-tuned Gemma model (no external API), s
 {
   "segmentation": {
     "llm": {
-      "model_name": "wdmuer/decide-marked-segmentation",
+      "model_name": "lblod/decide-marked-segmentation",
       "temperature": 0.1
     },
     "max_new_tokens": 4096,
@@ -103,7 +103,7 @@ The model is loaded via the HuggingFace `transformers` library.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, `openai`, …) |
-| `model_name` | string | `"mistral-large-2512"` | Model name for the provider; set to a HuggingFace model (e.g. `wdmuer/decide-marked-segmentation`) to use the local Gemma path |
+| `model_name` | string | `"mistral-large-2512"` | Model name for the provider; set to a HuggingFace model (e.g. `lblod/decide-marked-segmentation`) to use the local Gemma path |
 | `api_key` | string \| null | `null` | API key (preferably supplied via `SEGMENTATION__LLM__API_KEY`) |
 | `base_url` | string \| null | `null` | Base URL of the LLM endpoint |
 | `temperature` | float | `0.0` | Generation temperature |
@@ -129,7 +129,7 @@ SEGMENTATION__LLM__BASE_URL="https://api.mistral.ai/v1"
 ```
 
 ## Running
-Run the container using 
+Run the container using
 ```
 docker compose up -d # run without -d flag when you don't want to run it in the background
 ```
