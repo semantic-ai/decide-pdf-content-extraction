@@ -9,7 +9,7 @@ def _make_segmentor(mock_analyzer_cls):
     seg = LLMSegmentor(
         task_uri="http://task/1",
         endpoint="https://api.mistral.ai/v1",
-        model_name="mistral-large-latest",
+        model_name="mistral-large-2512",
         provider="mistralai",
     )
     seg.analyzer.analyze_single_entry.return_value = {

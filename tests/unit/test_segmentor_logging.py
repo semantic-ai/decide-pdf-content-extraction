@@ -53,7 +53,7 @@ def test_llm_segmentor_propagates_task_to_analyzer(mock_log_date, mock_aligner):
         seg = LLMSegmentor(
             task_uri="http://task/1",
             endpoint="https://api.mistral.ai/v1",
-            model_name="mistral-large-latest",
+            model_name="mistral-large-2512",
             provider="mistralai",
             task=task,
         )

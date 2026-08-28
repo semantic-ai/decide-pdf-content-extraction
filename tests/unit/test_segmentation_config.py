@@ -17,14 +17,14 @@ def test_nested_llm_from_dict():
     cfg = SegmentationConfig(
         llm={
             "provider": "mistralai",
-            "model_name": "mistral-large-latest",
+            "model_name": "mistral-large-2512",
             "base_url": "https://api.mistral.ai/v1",
             "temperature": 0.1,
         },
         max_new_tokens=250000,
         text_limit_chars=1000000,
     )
-    assert cfg.llm.model_name == "mistral-large-latest"
+    assert cfg.llm.model_name == "mistral-large-2512"
     assert cfg.llm.base_url == "https://api.mistral.ai/v1"
     assert cfg.llm.temperature == 0.1
 

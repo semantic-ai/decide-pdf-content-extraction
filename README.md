@@ -36,7 +36,7 @@ The service uses a `config.json` file for segmentation settings. The `segmentati
   "segmentation": {
     "llm": {
       "provider": "mistralai",
-      "model_name": "mistral-large-latest",
+      "model_name": "mistral-large-2512",
       "base_url": "https://api.mistral.ai/v1",
       "temperature": 0.1
     },
@@ -103,7 +103,7 @@ The model is loaded via the HuggingFace `transformers` library.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `provider` | string | `"mistralai"` | LangChain provider name (`mistralai`, `ollama`, `openai`, …) |
-| `model_name` | string | `"mistral-large-latest"` | Model name for the provider; set to a HuggingFace model (e.g. `wdmuer/decide-marked-segmentation`) to use the local Gemma path |
+| `model_name` | string | `"mistral-large-2512"` | Model name for the provider; set to a HuggingFace model (e.g. `wdmuer/decide-marked-segmentation`) to use the local Gemma path |
 | `api_key` | string \| null | `null` | API key (preferably supplied via `SEGMENTATION__LLM__API_KEY`) |
 | `base_url` | string \| null | `null` | Base URL of the LLM endpoint |
 | `temperature` | float | `0.0` | Generation temperature |
@@ -124,7 +124,7 @@ Config values can be overridden via environment variables using the `SEGMENTATIO
 ```
 SEGMENTATION__LLM__API_KEY="your-api-key"
 SEGMENTATION__LLM__PROVIDER="mistralai"
-SEGMENTATION__LLM__MODEL_NAME="mistral-large-latest"
+SEGMENTATION__LLM__MODEL_NAME="mistral-large-2512"
 SEGMENTATION__LLM__BASE_URL="https://api.mistral.ai/v1"
 ```
 
