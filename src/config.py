@@ -47,7 +47,7 @@ class LlmConfig(BaseModel):
         description="LangChain provider name, e.g. 'mistralai', 'ollama', 'openai'"
     )
     model_name: str = Field(
-        default="mistral-large-latest",
+        default="mistral-large-2512",
         description="Model name as understood by the provider"
     )
     api_key: SecretStr | None = Field(

@@ -444,7 +444,7 @@ Line-numbered text:
         "tagged_text": {"default": "", "type": str}
     }
 
-    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "mistral-large-latest", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, provider: str = "mistralai", max_retries: int = 3, retry_delay: float = 15.0, task: Optional[Any] = None):
+    def __init__(self, task_uri: str, api_key: str = None, endpoint: str = None, model_name: str = "mistral-large-2512", temperature: float = 0.0, max_new_tokens: int = 120000, text_limit_chars: int = 100000, provider: str = "mistralai", max_retries: int = 3, retry_delay: float = 15.0, task: Optional[Any] = None):
         super().__init__(task_uri, api_key, endpoint, model_name, temperature, max_new_tokens, task=task)
         self.text_limit_chars = text_limit_chars
         if LLMAnalyzer is None:

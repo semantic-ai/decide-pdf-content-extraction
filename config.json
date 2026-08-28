@@ -13,7 +13,7 @@
   "segmentation": {
     "llm": {
       "provider": "mistralai",
-      "model_name": "mistral-large-latest",
+      "model_name": "mistral-large-2512",
       "base_url": "https://api.mistral.ai/v1",
       "temperature": 0.1
     },
