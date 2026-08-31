@@ -303,7 +303,7 @@ SEGMENTS:
 # Generic LLM-based segmentor that relies on the LLM to produce JSON output with tagged text, then extracts spans using the span_aligner package.
 class LLMSegmentor(AbstractSegmentor):
     """
-    Segmentor using LLMAnalyzer (Azure OpenAI / Local LLM).
+    Segmentor using LLMAnalyzer (Mistral / Local LLM).
     """
 
     LABEL_MAPPING = {
