@@ -665,7 +665,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
     def create_target_shape(self, expression_uris: list[str]):
         """
-        Create a target shape resource linked to the parent job of this task.
+        Create a target shape resource linked as a result container to this task.
 
         Args:
             expression_uris: List of URIs for ELI Expression resources
@@ -676,40 +676,49 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         node_shape_uuid = str(uuid.uuid4())
         node_shape_uri = f"http://redpencil.data.gift/id/shapes/{node_shape_uuid}"
 
-        parent_job = self.get_parent_job()
+        container_shape_uuid = str(uuid.uuid4())
+        container_shape_uri = (
+            f"http://redpencil.data.gift/id/shapes/{container_shape_uuid}"
+        )
 
         safe_expression_uris = "\n".join(map(sparql_escape_uri, expression_uris))
 
         # TODO: Add sh prefix to configured ones
         q = Template(
-            get_prefixes_for_query("mu", "ext") + f"""
-                PREFIX sh: <http://www.w3.org/ns/shacl#>
-                INSERT {{
-                  GRAPH $graph {{
+            get_prefixes_for_query("mu", "task", "nfo")
+            + """PREFIX sh: <http://www.w3.org/ns/shacl#>
+                INSERT {
+                  GRAPH $graph {
                     ?shape a sh:NodeShape ;
-                           mu:uuid $uuid ;
+                           mu:uuid $shapeUuid ;
                            sh:targetNode ?node .
-                    ?job a ext:AnnotationJob ;
-                         ext:shapeForTargets ?shape .
-                  }}
-                }} WHERE {{
-                  VALUES ?job {{
-                    $job
-                  }}
-                  VALUES ?shape {{
+                    ?resultsContainer a nfo:DataContainer ;
+                                      mu:uuid $containerUuid ;
+                                      task:hasResource ?shape .
+                    ?task task:resultsContainer ?resultsContainer .
+                  }
+                } WHERE {
+                  VALUES ?task {
+                    $taskUri
+                  }
+                  VALUES ?shape {
                     $shape
-                  }}
-                  VALUES ?node {{
+                  }
+                  VALUES ?node {
                     $expressions
-                  }}
-                }}
-            """
+                  }
+                  VALUES ?resultsContainer {
+                    $resultsContainerUri
+                  }
+                }"""
         ).substitute(
             graph=sparql_escape_uri(GRAPHS["jobs"]),
             shape=sparql_escape_uri(node_shape_uri),
-            uuid=sparql_escape_string(node_shape_uuid),
-            job=sparql_escape_uri(parent_job),
-            expressions=safe_expression_uris
+            shapeUuid=sparql_escape_string(node_shape_uuid),
+            resultsContainerUri=sparql_escape_uri(container_shape_uri),
+            containerUuid=sparql_escape_string(container_shape_uuid),
+            taskUri=sparql_escape_uri(self.task_uri),
+            expressions=safe_expression_uris,
         )
 
         update(q, sudo=True)
@@ -769,6 +778,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 manifestation_uri = self.create_manifestation(
                     extraction_result["byte_size"], pdf_url
                 )
+                expression_uris: list[str] = []
                 for decision in decisions:
                     expression_uuid = str(uuid.uuid4())
                     work_uuid = str(uuid.uuid4())
@@ -792,6 +802,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                         self.create_output_container(title_uri)
                     )
 
+                if len(expression_uris) > 0:
+                    self.create_target_shape(expression_uris)
                 self.results_container_uris.append(
                     self.create_output_container(manifestation_uri)
                 )
@@ -806,9 +818,6 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     write_error_log(self.task_uri, error_msg)
                 except Exception:
                     logger.exception(f"Could not persist per-PDF error for {pdf_url}")
-
-        if (len(expression_uris) > 0):
-            self.create_target_shape(expression_uris)
 
         fail_if_no_successes(
             label="PDF processing",
