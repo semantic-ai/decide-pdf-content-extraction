@@ -1,25 +1,31 @@
-import os
-import uuid
-import requests
 import contextlib
-import langdetect
+import os
 import urllib.request
-
-from string import Template
-from urllib.parse import urlparse, urljoin
+import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
+from string import Template
 from typing import Optional, Type, TypedDict
+from urllib.parse import urljoin, urlparse
 
-from .segmentors import AbstractSegmentor, get_segmentor
-from .helper_functions import fail_if_no_successes
-
-from decide_ai_service_base.task import DecisionTask
-from decide_ai_service_base.sparql_config import LANGUAGE_CODE_TO_URI, get_prefixes_for_query, GRAPHS, TASK_OPERATIONS, AGENT_TYPES, SPARQL_PREFIXES
+import langdetect
+import requests
 from decide_ai_service_base.annotation import RelationExtractionAnnotation
-from decide_ai_service_base.util import write_error_log, get_agent_uri
-from escape_helpers import sparql_escape_uri, sparql_escape_string
-from helpers import query, update, logger
+from decide_ai_service_base.sparql_config import (
+    AGENT_TYPES,
+    GRAPHS,
+    LANGUAGE_CODE_TO_URI,
+    SPARQL_PREFIXES,
+    TASK_OPERATIONS,
+    get_prefixes_for_query,
+)
+from decide_ai_service_base.task import DecisionTask
+from decide_ai_service_base.util import get_agent_uri, write_error_log
+from escape_helpers import sparql_escape_string, sparql_escape_uri
+from helpers import logger, query, update
+
+from .helper_functions import fail_if_no_successes
+from .segmentors import AbstractSegmentor, get_segmentor
 
 PDF_PAGE_LIMIT = 10
 
@@ -58,8 +64,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     - "download_urls": list[str]
         """
         q = Template(
-            get_prefixes_for_query("task") +
-            f"""
+            get_prefixes_for_query("task")
+            + f"""
             SELECT ?container WHERE {{
             GRAPH <{GRAPHS["jobs"]}> {{
                 $task task:inputContainer ?container .
@@ -142,8 +148,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
-            raise RuntimeError(
-                "No remote files found in harvesting collection")
+            raise RuntimeError("No remote files found in harvesting collection")
 
         download_urls = [b["fileUrl"]["value"] for b in bindings]
         filenames = [b["uuid"]["value"] + ".pdf" for b in bindings]
@@ -183,15 +188,16 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         if not bindings:
-            raise RuntimeError(
-                "No local share:// files found in data container")
+            raise RuntimeError("No local share:// files found in data container")
 
         return {
             "filenames": [b["fileName"]["value"] for b in bindings],
             "download_urls": [b["shareIri"]["value"] for b in bindings],
         }
 
-    def extract_content_from_pdf(self, input: dict[str, list[str]]) -> list[NormalPdfResult | SkippedPdfResult]:
+    def extract_content_from_pdf(
+        self, input: dict[str, list[str]]
+    ) -> list[NormalPdfResult | SkippedPdfResult]:
         """
         Download the PDFs and extract their content using Apache Tika.
 
@@ -220,31 +226,29 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             share_folder_name = os.path.dirname(share_root)
 
             if parsed.scheme == share_folder_name:
-                saved_path = os.path.join(
-                    share_root, parsed.netloc + parsed.path)
+                saved_path = os.path.join(share_root, parsed.netloc + parsed.path)
 
             else:
                 extract_folder = os.path.join(share_root, "extract")
                 os.makedirs(extract_folder, exist_ok=True)
 
-                saved_path = os.path.join(
-                    extract_folder, os.path.basename(filename))
+                saved_path = os.path.join(extract_folder, os.path.basename(filename))
 
                 try:
                     response = requests.get(
                         download_url,
-                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"},
-                        stream=True
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                        },
+                        stream=True,
                     )
                     response.raise_for_status()
-                    with open(saved_path, 'wb') as f:
+                    with open(saved_path, "wb") as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
                 except Exception as e:
-                    logger.exception(
-                        f"PDF download failed for {download_url}")
-                    errors.append(
-                        f"download {download_url}: {type(e).__name__}: {e}")
+                    logger.exception(f"PDF download failed for {download_url}")
+                    errors.append(f"download {download_url}: {type(e).__name__}: {e}")
                     continue
 
             if os.path.isfile(saved_path):
@@ -290,10 +294,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                         }
                     )
                 except Exception as e:
-                    logger.exception(
-                        f"Tika extraction failed for {saved_path}")
-                    errors.append(
-                        f"tika {download_url}: {type(e).__name__}: {e}")
+                    logger.exception(f"Tika extraction failed for {saved_path}")
+                    errors.append(f"tika {download_url}: {type(e).__name__}: {e}")
 
         fail_if_no_successes(
             label="PDF extraction",
@@ -303,7 +305,14 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         )
         return results
 
-    def create_eli_expression(self, decision: dict[str, str], language: str, manifestation_uri: str, expression_uuid: str, work_uri: str) -> str:
+    def create_eli_expression(
+        self,
+        decision: dict[str, str],
+        language: str,
+        manifestation_uri: str,
+        expression_uuid: str,
+        work_uri: str,
+    ) -> str:
         """
         Function to create a single ELI expression from PDF content.
 
@@ -317,8 +326,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         Returns:
             The created ELI expression URI
         """
-        now = datetime.now(timezone.utc).astimezone(
-        ).isoformat(timespec="seconds")
+        now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
         expression_uri = f"{SPARQL_PREFIXES['expressions']}{expression_uuid}"
 
@@ -352,7 +360,9 @@ class PdfContentExtractionTask(DecisionTask, ABC):
 
         return expression_uri
 
-    def create_title_annotation(self, decision: dict[str, str], language: str, eli_expression_uri: str) -> str:
+    def create_title_annotation(
+        self, decision: dict[str, str], language: str, eli_expression_uri: str
+    ) -> str:
         """
         Function to create a title annotation for an ELI Expression.
 
@@ -370,16 +380,18 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             obj=f"{sparql_escape_string(decision['title'])}@{language}",
             activity_id=self.task_uri,
             source_uri=eli_expression_uri,
-            start=decision.get('title_start'),
-            end=decision.get('title_end'),
+            start=decision.get("title_start"),
+            end=decision.get("title_end"),
             agent=get_agent_uri(),
             agent_type=AGENT_TYPES["ai_component"],
-            confidence=1.0
+            confidence=1.0,
         ).add_to_triplestore_if_not_exists()
 
         return title_uri
 
-    def create_manifestation(self, byte_size: int, pdf_url: str, skipped: bool = False) -> str:
+    def create_manifestation(
+        self, byte_size: int, pdf_url: str, skipped: bool = False
+    ) -> str:
         """
         Function to create a single ELI manifestation.
 
@@ -394,9 +406,13 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         now = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
         manifestation_uuid = str(uuid.uuid4())
-        manifestation_uri = f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
+        manifestation_uri = (
+            f"http://data.lblod.info/id/manifestations/{manifestation_uuid}"
+        )
 
-        prefixes = ["eli", "epvoc", "dcterms", "xsd", "mu"] + (["ext"] if skipped else [])
+        prefixes = ["eli", "epvoc", "dcterms", "xsd", "mu"] + (
+            ["ext"] if skipped else []
+        )
         skipped_triple = "ext:skippedDueToPageLimit true ;" if skipped else ""
 
         q = Template(
@@ -478,8 +494,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         container_uri = f"http://data.lblod.info/id/data-container/{container_id}"
 
         q = Template(
-            get_prefixes_for_query("task", "nfo", "mu") +
-            f"""
+            get_prefixes_for_query("task", "nfo", "mu")
+            + f"""
             INSERT DATA {{
             GRAPH <{GRAPHS["data_containers"]}> {{
                 $container a nfo:DataContainer ;
@@ -491,7 +507,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         ).substitute(
             container=sparql_escape_uri(container_uri),
             uuid=container_id,
-            resource=sparql_escape_uri(resource)
+            resource=sparql_escape_uri(resource),
         )
 
         update(q, sudo=True)
@@ -515,8 +531,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             produce a single ELI Expression for the whole document.
         """
         q = Template(
-            get_prefixes_for_query("ext", "dct") +
-            """
+            get_prefixes_for_query("ext", "dct")
+            + """
             SELECT ?split WHERE {
               GRAPH $graph {
                 VALUES ?t { $task }
@@ -540,12 +556,12 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         )
 
         try:
-            bindings = query(q, sudo=True).get(
-                "results", {}).get("bindings", [])
+            bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
         except Exception:
             logger.exception(
                 f"Could not read ext:splitDecisions for task {self.task_uri}; "
-                f"defaulting to splitting enabled")
+                f"defaulting to splitting enabled"
+            )
             return True
 
         if not bindings or "split" not in bindings[0]:
@@ -555,7 +571,9 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         value = bindings[0]["split"]["value"].strip().lower()
         return value not in ("false", "0")
 
-    def split_decisions(self, text: str, segmentor: AbstractSegmentor, split_enabled: bool = True) -> list[dict[str, str]]:
+    def split_decisions(
+        self, text: str, segmentor: AbstractSegmentor, split_enabled: bool = True
+    ) -> list[dict[str, str]]:
         """
         Split the extracted text into individual decisions.
 
@@ -572,44 +590,47 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         segments = segmentor.segment(text)
         print(segments)
         decision_titles = [
-            segment for segment in segments if segment["label"].lower() == "title"]
+            segment for segment in segments if segment["label"].lower() == "title"
+        ]
 
         if len(decision_titles) == 0:
-            return [{"text": text,
-                     "title": "",
-                     "title_start": None,
-                     "title_end": None}]
+            return [{"text": text, "title": "", "title_start": None, "title_end": None}]
 
         elif not split_enabled or len(decision_titles) == 1:
             # Use the first title as that decision's title.
             first_title = min(decision_titles, key=lambda s: s["start"])
-            return [{"text": text,
-                     "title": first_title["text"],
-                     "title_start": first_title["start"],
-                     "title_end": first_title["end"]}]
+            return [
+                {
+                    "text": text,
+                    "title": first_title["text"],
+                    "title_start": first_title["start"],
+                    "title_end": first_title["end"],
+                }
+            ]
         else:
-            decision_titles_sorted = sorted(
-                decision_titles, key=lambda s: s["start"])
+            decision_titles_sorted = sorted(decision_titles, key=lambda s: s["start"])
 
-            intro_text = text[:decision_titles_sorted[0]["start"]]
+            intro_text = text[: decision_titles_sorted[0]["start"]]
 
             for i in range(len(decision_titles_sorted)):
                 current_title = decision_titles_sorted[i]
                 if i < len(decision_titles_sorted) - 1:
-                    next_title = decision_titles_sorted[i+1]
+                    next_title = decision_titles_sorted[i + 1]
                     decision_end = next_title["start"]
                 else:
                     decision_end = len(text)
 
-                decision_text = intro_text + \
-                    text[current_title["start"]:decision_end]
+                decision_text = intro_text + text[current_title["start"] : decision_end]
 
-                decisions.append({
-                    "text": decision_text,
-                    "title": current_title["text"],
-                    "title_start": len(intro_text),
-                    "title_end": len(intro_text) + (current_title["end"] - current_title["start"])
-                })
+                decisions.append(
+                    {
+                        "text": decision_text,
+                        "title": current_title["text"],
+                        "title_start": len(intro_text),
+                        "title_end": len(intro_text)
+                        + (current_title["end"] - current_title["start"]),
+                    }
+                )
 
             return decisions
 
@@ -621,8 +642,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             The URI of the job that is this task's parent
         """
         q = Template(
-            get_prefixes_for_query("dct") + f"""
-            SELECT DISTINCT ?parentJob
+            get_prefixes_for_query("dct")
+            + """SELECT DISTINCT ?parentJob
             WHERE {{
               GRAPH $graph {{
                 $task dct:isPartOf ?parentJob .
@@ -630,9 +651,9 @@ class PdfContentExtractionTask(DecisionTask, ABC):
             }} LIMIT 1
             """
         ).substitute(
-                graph=sparql_escape_uri(GRAPHS["jobs"]),
-                task=sparql_escape_uri(self.task_uri)
-            )
+            graph=sparql_escape_uri(GRAPHS["jobs"]),
+            task=sparql_escape_uri(self.task_uri),
+        )
 
         bindings = query(q, sudo=True).get("results", {}).get("bindings", [])
 
@@ -709,7 +730,8 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         split_enabled = self.should_split_decisions()
         logger.info(
             f"Decision splitting {'enabled' if split_enabled else 'disabled'} "
-            f"for task {self.task_uri}")
+            f"for task {self.task_uri}"
+        )
 
         extraction_results = self.extract_content_from_pdf(input)
 
@@ -717,16 +739,18 @@ class PdfContentExtractionTask(DecisionTask, ABC):
         successes = 0
         total = len(extraction_results)
 
-        expression_uris: list[str] = []
+        # expression_uris: list[str] = []
 
         for extraction_result in extraction_results:
             pdf_url = extraction_result["pdf_url"]
             try:
                 if extraction_result.get("skipped"):
                     manifestation_uri = self.create_manifestation(
-                        extraction_result["byte_size"], pdf_url, skipped=True)
+                        extraction_result["byte_size"], pdf_url, skipped=True
+                    )
                     self.results_container_uris.append(
-                        self.create_output_container(manifestation_uri))
+                        self.create_output_container(manifestation_uri)
+                    )
                     successes += 1
                     continue
 
@@ -739,31 +763,38 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                     ) from e
 
                 decisions = self.split_decisions(
-                    extraction_result["content"], segmentor, split_enabled)
+                    extraction_result["content"], segmentor, split_enabled
+                )
 
                 manifestation_uri = self.create_manifestation(
-                    extraction_result["byte_size"], pdf_url)
+                    extraction_result["byte_size"], pdf_url
+                )
                 for decision in decisions:
                     expression_uuid = str(uuid.uuid4())
                     work_uuid = str(uuid.uuid4())
                     work_uri = self.create_eli_work(expression_uuid, work_uuid)
 
                     expression_uri = self.create_eli_expression(
-                        decision, language, manifestation_uri, expression_uuid, work_uri)
+                        decision, language, manifestation_uri, expression_uuid, work_uri
+                    )
                     expression_uris.append(expression_uri)
                     self.results_container_uris.append(
-                        self.create_output_container(expression_uri))
+                        self.create_output_container(expression_uri)
+                    )
                     self.results_container_uris.append(
-                        self.create_output_container(work_uri))
+                        self.create_output_container(work_uri)
+                    )
 
-                    title_uri = self.create_title_annotation(decision,
-                                                             language,
-                                                             expression_uri)
+                    title_uri = self.create_title_annotation(
+                        decision, language, expression_uri
+                    )
                     self.results_container_uris.append(
-                        self.create_output_container(title_uri))
+                        self.create_output_container(title_uri)
+                    )
 
                 self.results_container_uris.append(
-                    self.create_output_container(manifestation_uri))
+                    self.create_output_container(manifestation_uri)
+                )
                 successes += 1
             except Exception as e:
                 logger.exception(f"Processing PDF {pdf_url} failed")
@@ -774,8 +805,7 @@ class PdfContentExtractionTask(DecisionTask, ABC):
                 try:
                     write_error_log(self.task_uri, error_msg)
                 except Exception:
-                    logger.exception(
-                        f"Could not persist per-PDF error for {pdf_url}")
+                    logger.exception(f"Could not persist per-PDF error for {pdf_url}")
 
         if (len(expression_uris) > 0):
             self.create_target_shape(expression_uris)
